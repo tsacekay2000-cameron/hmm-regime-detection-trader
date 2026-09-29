@@ -83,3 +83,39 @@ lower `--starts` to speed them up.
 
 Caveats: resampling only recombines history it is given, and HMM paths are only
 as realistic as the fitted model (Gaussian regimes understate fat tails).
+
+## Prop firm challenge simulation (`hmm_trader/prop_firm.py`)
+
+A prop firm evaluation is won or lost on the path, not the average return: the
+account has to hit a profit target before it breaches a max drawdown or daily
+loss limit. `simulate_challenge` replays simulated return paths through a set of
+challenge rules and reports the pass rate, which rule failed the rest, and how
+many days passing took.
+
+```python
+from hmm_trader import monte_carlo as mc, prop_firm as pf
+
+rules = pf.ChallengeRules(
+    profit_target=0.10,        # all limits are fractions of the initial balance
+    max_drawdown=0.10,
+    daily_loss_limit=0.05,     # from the start-of-day balance; None to disable
+    drawdown_type="static",    # or "trailing" (real time) / "trailing_eod"
+    trailing_cap=None,         # 0.0 = trailing floor stops at the starting balance
+    min_trading_days=4,        # days with a nonzero return
+    max_days=None,             # time limit, if the firm has one
+    consistency=None,          # e.g. 0.5 = best day <= 50% of total profit
+)
+paths = mc.block_bootstrap_paths(backtest_daily_returns, n_sims=5000, horizon=252)
+res = pf.simulate_challenge(paths, rules, leverage=1.0)
+print(res.report())
+res.pass_rate, res.rate(pf.FAILED_DAILY_LOSS), res.days_to_pass()[50]
+```
+
+`paths` can be any `(n_sims, n_days)` array of daily strategy returns, including
+`mc.simulate_hmm_strategy` output. `leverage` scales every return, so sweeping it
+shows how position size trades pass rate against blow-ups. With daily returns,
+breaches are only seen on the daily close, which understates failures; pass
+`(n_sims, n_days, steps_per_day)` intraday returns to catch intraday dips.
+
+Demo comparing buy & hold and the regime filter across leverage under a static
+and a trailing drawdown rule set: `python -m examples.prop_firm_demo`
