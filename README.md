@@ -63,9 +63,23 @@ python -m examples.spy_monte_carlo                       # bundled SPY sample
 python -m examples.spy_monte_carlo prices.csv --states 3 --exposure 1,0.5,0
 ```
 
-A CSV needs a `close` or `adj_close` column; `--help` lists the other options.
-Two years with one crash is too little to fit regimes reliably, so use 10+ years
-of history for real decisions.
+A CSV needs a `close` or `adj_close` column (plus an optional `date` column);
+`--help` lists the other options. Two years with one crash is too little to fit
+regimes reliably, so use 10+ years of history for real decisions.
+
+**Walk-forward (out-of-sample) test.** By default the HMM is fitted on the same
+data it trades, which flatters the strategy. `--walk-forward` fits only on data
+before the test period, refits every `--refit-every` periods (default 63, about
+quarterly) on an expanding window, and reports buy & hold vs. the strategy on
+the unseen test period:
+
+```bash
+python -m examples.spy_monte_carlo prices.csv --walk-forward --test-start 2022-01-01
+python -m examples.spy_monte_carlo --walk-forward --train-frac 0.6 --refit-every 0   # fit once
+```
+
+Each refit runs `--starts` random restarts, so long tests take a minute or two;
+lower `--starts` to speed them up.
 
 Caveats: resampling only recombines history it is given, and HMM paths are only
 as realistic as the fitted model (Gaussian regimes understate fat tails).
