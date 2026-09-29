@@ -46,10 +46,18 @@ def fit_hmm(returns: np.ndarray, n_states: int, n_starts: int) -> mc.GaussianHMM
     logging.getLogger("hmmlearn").setLevel(logging.ERROR)  # EM wobble near convergence
 
     X = returns.reshape(-1, 1)
-    best = max(
-        (GaussianHMM(n_states, "full", n_iter=500, random_state=s).fit(X) for s in range(n_starts)),
-        key=lambda m: m.score(X),
-    )
+    best, best_score = None, -np.inf
+    for seed in range(n_starts):
+        # A start can collapse a regime onto a few points (zero variance -> NaN); skip it.
+        try:
+            model = GaussianHMM(n_states, "full", n_iter=500, random_state=seed).fit(X)
+            score = model.score(X)
+        except (ValueError, np.linalg.LinAlgError):
+            continue
+        if np.isfinite(score) and score > best_score:
+            best, best_score = model, score
+    if best is None:
+        raise SystemExit(f"all {n_starts} HMM fits failed; try fewer --states or more --starts")
     p = mc.GaussianHMMParams.from_hmmlearn(best)
     order = np.argsort(p.stds)
     return mc.GaussianHMMParams(
