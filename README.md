@@ -53,5 +53,19 @@ Pass `use_true_states=True` for a perfect-detection upper bound.
 
 Full demo: `python -m examples.monte_carlo_demo`
 
+**On real prices** (`pip install -r requirements-examples.txt`): fits an HMM to
+daily closes and runs all four analyses (resampled actual returns, and buy &
+hold vs. the regime strategy on HMM-simulated paths). Ships with 2 years of SPY
+closes in `examples/data/`:
+
+```bash
+python -m examples.spy_monte_carlo                       # bundled SPY sample
+python -m examples.spy_monte_carlo prices.csv --states 3 --exposure 1,0.5,0
+```
+
+A CSV needs a `close` or `adj_close` column; `--help` lists the other options.
+Two years with one crash is too little to fit regimes reliably, so use 10+ years
+of history for real decisions.
+
 Caveats: resampling only recombines history it is given, and HMM paths are only
 as realistic as the fitted model (Gaussian regimes understate fat tails).
