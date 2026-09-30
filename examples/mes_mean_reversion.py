@@ -23,6 +23,10 @@ D. (``--part d``) V1 with a stop k x ATR(10) below the first entry, for k in
    none / 1.5 / 2 / 3 (all shown, none picked), and prop pass rates for each
    next to its zero-edge baseline.
 
+E. (``--part e``) V1 with an account daily loss limit of none / $1,000 /
+   $750 / $500: sell when the session's loss from its open reaches it and
+   resume at the next open while the signal lasts; per contract count.
+
 B. Intraday Bollinger fade on 5-minute bars, $200 risk per trade: fade a
    close outside the 20-bar +/- 2 sd band at the next open, stop 2 sd away,
    exit on a close back through the average or at 15:55 ET. Flat every
@@ -284,6 +288,52 @@ def part_d(args, rng: np.random.Generator, symbol: str) -> None:
         print(f"  {n:<10}" + "".join(f"{c:>18}" for c in cells))
 
 
+DAILY_LIMITS = (None, 1000.0, 750.0, 500.0)  # account dollars; fixed before looking
+
+
+def part_e(args, rng: np.random.Generator, symbol: str) -> None:
+    spec = fu.CONTRACTS[symbol]
+    cost = 0.62 + spec.tick_value
+    bars = fu.load_bars(DATA_DIR / f"{symbol.lower()}_daily.csv")
+    roll = fu.quarterly_roll_mask(bars.dates, spec.roll_sessions)
+    adj_close = bars.close[0] * np.r_[1.0, np.cumprod(1 + fu.adjusted_returns(bars, roll))]
+    held = mr.rsi2_positions(adj_close)
+    dates = bars.dates[1:]
+    start = int(np.argmax(np.isfinite(mr.sma(adj_close, 200))))
+    sl = slice(start, None)
+    name = lambda d: "none" if d is None else f"${d:,.0f}"  # noqa: E731
+
+    print(f"== E. RSI(2) flat through breaks (V1) with a daily loss limit for the account: "
+          f"sell when the day's loss reaches it, resume next session; {symbol}, "
+          f"{dates[start]} .. {dates[-1]} ==")
+    idx = block_bootstrap_index(held[sl].size, args.sims, args.horizon, 10, rng)
+    table = {}
+    for n in args.contracts:
+        for d in DAILY_LIMITS:
+            stop = None if d is None else d / (n * spec.multiplier)
+            r = mr.flat_session_trades(bars, roll, held, spec.multiplier, cost,
+                                       session_stop=stop)
+            steps = r.steps[sl] * n
+            daily = steps.sum(axis=1)
+            rates = [pf.simulate_challenge(x[idx] / ACCOUNT, RULES, compounding=False).pass_rate
+                     for x in (steps, demean(steps, r.in_market[sl]))]
+            table[n, d] = (daily.sum(), daily.min(), int(r.limit_hit[sl].sum()),
+                           max_drawdown(daily), *rates)
+
+    print(f"  Net $ / worst day $ / days the limit was hit / max drawdown $:")
+    print(f"  {'contracts':<10}" + "".join(f"{name(d):>30}" for d in DAILY_LIMITS))
+    for n in args.contracts:
+        print(f"  {n:<10}" + "".join(
+            f"{t[0]:>+10,.0f} /{t[1]:>+7,.0f} /{t[2]:>3d} /{t[3]:>6,.0f}"
+            for t in (table[n, d] for d in DAILY_LIMITS)))
+    print(f"\n  Prop evaluation, bootstrap, {args.horizon} sessions max "
+          f"(pass rate, then zero-edge baseline):")
+    print(f"  {'contracts':<10}" + "".join(f"{name(d):>18}" for d in DAILY_LIMITS))
+    for n in args.contracts:
+        print(f"  {n:<10}" + "".join(f"{table[n, d][4]:>7.1%} vs {table[n, d][5]:>5.1%}"
+                                    .rjust(18) for d in DAILY_LIMITS))
+
+
 def part_b(args, rng: np.random.Generator) -> None:
     bars = orb.load_intraday(DATA_DIR / "mes_5min_rth.csv.gz")
     p = mr.FadeParams()
@@ -324,8 +374,8 @@ def part_b(args, rng: np.random.Generator) -> None:
 
 def main(argv: Optional[list[str]] = None) -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--part", choices=("a", "b", "c", "d", "both", "all"), default="both",
-                    help="both = A and B; all = A, B, C and D")
+    ap.add_argument("--part", choices=("a", "b", "c", "d", "e", "both", "all"),
+                    default="both", help="both = A and B; all = every part")
     ap.add_argument("--contracts", default="1,2,3",
                     type=lambda t: [int(x) for x in t.split(",") if int(x) > 0],
                     help="contract counts for the prop evaluations in parts A and C")
@@ -354,6 +404,10 @@ def main(argv: Optional[list[str]] = None) -> None:
     if args.part in ("d", "all"):
         for symbol in symbols:
             part_d(args, rng, symbol)
+            print()
+    if args.part in ("e", "all"):
+        for symbol in symbols:
+            part_e(args, rng, symbol)
             print()
     if args.part in ("b", "both", "all"):
         part_b(args, rng)

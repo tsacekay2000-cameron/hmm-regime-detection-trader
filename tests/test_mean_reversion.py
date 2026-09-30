@@ -187,3 +187,30 @@ def test_flat_session_trades_matches_session_steps_without_stop():
     ref = session_steps(bars, held, spec, overnight=False, cost_per_side=2.0)
     new = mr.flat_session_trades(bars, roll, held, spec.multiplier, 2.0)
     np.testing.assert_allclose(new.steps, ref)
+
+
+def test_daily_loss_limit_ends_the_day_not_the_trade():
+    # held sessions 1-3; session 2 falls 3 below its open (100.5 -> 97)
+    b = daily_bars([(100, 101, 99, 100), (100, 101, 99.5, 100.5), (100.5, 101, 97, 97.5),
+                    (97.5, 104, 97, 103)])
+    roll = np.zeros(4, dtype=bool)
+    held = np.array([True, True, True])
+    r = mr.flat_session_trades(b, roll, held, multiplier=5, cost_per_side=1, session_stop=2.0)
+    assert list(r.limit_hit) == [False, True, False]
+    assert list(r.in_market) == [True, True, True]      # back in at session 3's open
+    assert list(r.stopped) == [False]
+    np.testing.assert_allclose(r.steps.sum(axis=1), [0.5 * 5 - 2, -2 * 5 - 2, 5.5 * 5 - 2])
+    # session 3 dips 0.5 below its open: inside a 2-point limit, so it is held to the close
+    assert r.pnl[0] == pytest.approx((0.5 - 2 + 5.5) * 5 - 6)
+
+
+def test_trade_stop_wins_when_it_is_the_higher_level():
+    b = daily_bars([(100, 101, 99, 100), (100, 101, 99.5, 100.5), (100.5, 101, 97, 97.5),
+                    (97.5, 104, 97, 103)])
+    roll = np.zeros(4, dtype=bool)
+    held = np.array([True, True, True])
+    # ATR(1) stop at 98 (from entry 100) sits above a 3-point limit (100.5 - 3 = 97.5)
+    r = mr.flat_session_trades(b, roll, held, multiplier=5, cost_per_side=1,
+                               stop_atr=1.0, atr_n=1, session_stop=3.0)
+    assert list(r.stopped) == [True] and not r.limit_hit.any()
+    assert list(r.in_market) == [True, True, False]

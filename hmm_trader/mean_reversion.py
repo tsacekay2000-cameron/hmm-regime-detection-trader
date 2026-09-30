@@ -115,6 +115,7 @@ class SessionTrades:
     pnl: np.ndarray         # per trade, dollars per contract after costs
     stopped: np.ndarray     # per trade: stop hit
     in_market: np.ndarray   # (n-1,) sessions actually held
+    limit_hit: np.ndarray   # (n-1,) sessions closed early by the daily loss limit
 
 
 def flat_session_trades(
@@ -125,6 +126,7 @@ def flat_session_trades(
     cost_per_side: float,
     stop_atr: Optional[float] = None,
     atr_n: int = 10,
+    session_stop: Optional[float] = None,
 ) -> SessionTrades:
     """Hold each ``held`` session from its open to its close (flat through the
     daily break), with an optional stop ``stop_atr`` x ATR below the first
@@ -134,12 +136,19 @@ def flat_session_trades(
     comes before ``atr_n`` sessions of data has no stop. Rows and ``held``
     cover sessions 1..n-1, as in ``rsi2_positions``.
 
+    ``session_stop`` is a daily loss limit in points per contract: when a
+    session falls that far below its open (the entry), the position is sold
+    there and the day is over, but the trade resumes at the next session's
+    open while the signal lasts. Whichever of the two levels is higher is hit
+    first on the way down.
+
     Each session is replayed open -> high -> low -> close, the worst order for
     a long; a stopped session ends at the fill.
     """
     atr = true_range_atr(bars, roll, atr_n) if stop_atr is not None else None
     steps = np.zeros((held.size, 4))
     in_market = np.zeros(held.size, dtype=bool)
+    limit_hit = np.zeros(held.size, dtype=bool)
     pnl, stopped = [], []
     for s, e in trade_spans(held):
         stop, total, hit = None, 0.0, False
@@ -152,10 +161,16 @@ def flat_session_trades(
                 stop = o - stop_atr * atr[b - 1]  # ATR known at the signal close
             in_market[t] = True
             row = [-2 * cost_per_side, (h - o) * multiplier, 0.0, 0.0]
-            if stop is not None and lo <= stop:
-                fill = min(o, stop)
+            day_limit = o - session_stop if session_stop is not None else -np.inf
+            trade_stop = stop if stop is not None else -np.inf
+            if lo <= max(day_limit, trade_stop):
+                if trade_stop >= day_limit:
+                    fill = min(o, trade_stop)
+                    hit = True
+                else:
+                    fill = day_limit
+                    limit_hit[t] = True
                 row[2] = (fill - h) * multiplier
-                hit = True
             else:
                 row[2], row[3] = (lo - h) * multiplier, (c - lo) * multiplier
             steps[t] = row
@@ -164,7 +179,8 @@ def flat_session_trades(
                 break
         pnl.append(total)
         stopped.append(hit)
-    return SessionTrades(steps, np.array(pnl), np.array(stopped, dtype=bool), in_market)
+    return SessionTrades(steps, np.array(pnl), np.array(stopped, dtype=bool), in_market,
+                         limit_hit)
 
 
 # ---------------------------------------------------------------------------
