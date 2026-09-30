@@ -230,6 +230,28 @@ lengths (so the long bias of a rising market does not count as skill), a
 next-open entry variant, an entry x exit sensitivity grid, the fade in R by
 period and before costs, and prop pass rates against a zero-edge baseline.
 
+## RSI(2) pullback for TradingView (`pine/rsi2_pullback.pine`)
+
+A Pine Script v6 strategy of the RSI(2) pullback from the mean-reversion study:
+long when RSI(2) closes below 10 above the 200-day average, out on the first
+close above the 5-day average. Its default mode is the prop version (buy at each
+6 PM ET session open, sell at the daily close, so never in a position through
+the daily break), 2 contracts, $0.62 commission and 1 tick of slippage per side.
+"Hold overnight" mode keeps one position from the next open to the exit close.
+
+To use it: open a daily `MES1!` chart with back-adjustment on (`B-ADJ`), add the
+script from the Pine Editor, and read the Strategy Tester. It plots the two
+averages, shades the sessions in a trade, shows a status panel (RSI, trend
+filter, what to do at the next open) and sends alerts at the daily close when
+an alert is created with "alert() function calls only".
+
+`python -m examples.rsi2_trade_list` writes the Python backtest's trades to
+`pine/rsi2_mes_reference_trades.csv` (60 trades from 2020-02 to 2026-09, +$8,643
+per contract in prop mode) to compare with TradingView's List of trades. The
+strategy lists each session as its own trade, and small differences are expected
+where TradingView's back-adjusted prices put RSI or an average right at a
+threshold.
+
 ## Trend following on MES (`examples/mes_trend.py`)
 
 `hmm_trader/trend.py` has three textbook rules on roll-adjusted daily closes,
