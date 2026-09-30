@@ -142,3 +142,19 @@ def test_bundled_data_sessions_and_ohlc(name, first, last):
     assert np.all(b.high >= np.maximum(b.open, b.close))
     assert np.all(b.low <= np.minimum(b.open, b.close))
     assert np.unique(b.date).size > 450
+
+
+def test_narrow_range_filter_is_causal_with_warmup():
+    # day widths 2, 2, 4, 1 (5-min range): lookback 2 -> days 3 and 4 eligible
+    days = []
+    for i, (hi, lo_) in enumerate([(102, 100), (102, 100), (104, 100), (101, 100)]):
+        days.append(day([(101, hi, lo_, 101), (101, hi + 0.5, 101, hi + 0.4)],
+                        date=f"2025-01-0{i + 2}"))
+    t = run(concat(*days), max_range_ratio=1.0, range_lookback=2)
+    assert list(t.reason[:2]) == ["warmup", "warmup"]
+    assert t.reason[2] == "filtered"          # 4 > 1.0 x median(2, 2)
+    assert t.side[3] == 1                     # 1 <= 1.0 x median(2, 4)
+    np.testing.assert_allclose(t.range_points, [2, 2, 4, 1])
+    assert "NR<=1x2d" in orb.ORBParams(max_range_ratio=1.0, range_lookback=2).label()
+    with pytest.raises(ValueError):
+        orb.ORBParams(max_range_ratio=0)

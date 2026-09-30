@@ -180,3 +180,15 @@ calendar; MGC/MCL cover 08:00-16:00 and use each day's highest-volume contract
 (never rolling back), which puts gold on Feb/Apr/Jun/Aug/Dec and crude on the
 next monthly contract about a week before expiry. The vendor data has a few
 mid-session gaps; the backtest resumes at the next bar's open.
+
+**Narrow-range filter** (`examples/orb_narrow_range.py`): `ORBParams(max_range_ratio=k,
+range_lookback=N)` trades only when today's opening range is at most `k` times the
+median of the previous `N` sessions (causal, with an `N`-session warm-up). The
+example tests a 30-minute ORB with k = 1, N = 20 on all four symbols, with a
+permutation test against random same-size day subsets, a split by period, a k x N
+robustness grid and a prop evaluation against the zero-edge baseline:
+
+```bash
+python -m examples.orb_narrow_range
+python -m examples.orb_narrow_range --k 0.8 --lookback 10
+```

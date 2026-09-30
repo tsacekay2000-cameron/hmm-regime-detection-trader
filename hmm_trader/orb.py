@@ -13,6 +13,10 @@ Rules, one trade per day at most:
   is skipped.
 - Exit at ``target_r`` times the risk, at the stop, or at the close of the
   last bar starting before ``flatten`` (default 15:55 ET), whichever is first.
+- Optional narrow-range filter: with ``max_range_ratio`` set, trade only when
+  today's range is at most that multiple of the median range of the previous
+  ``range_lookback`` sessions (causal; the first ``range_lookback`` sessions
+  are warm-up and not traded).
 
 Fills are conservative: stop entries and stop/flatten exits pay
 ``slippage_ticks``, a bar that touches both stop and target counts as a stop,
@@ -49,6 +53,8 @@ class ORBParams:
     flatten: int = 15 * 60 + 55
     bar_minutes: int = 5
     direction: str = "both"  # "both", "long" or "short"
+    max_range_ratio: Optional[float] = None  # narrow-range filter, off by default
+    range_lookback: int = 20
 
     def __post_init__(self) -> None:
         if self.range_minutes <= 0 or self.range_minutes % self.bar_minutes:
@@ -59,11 +65,17 @@ class ORBParams:
             raise ValueError("risk_dollars and max_contracts must be positive")
         if self.direction not in ("both", "long", "short"):
             raise ValueError("direction must be 'both', 'long' or 'short'")
+        if self.max_range_ratio is not None and self.max_range_ratio <= 0:
+            raise ValueError("max_range_ratio must be positive or None")
+        if self.range_lookback < 1:
+            raise ValueError("range_lookback must be >= 1")
 
     def label(self) -> str:
         target = f"{self.target_r:g}R" if self.target_r is not None else "EOD"
         side = "" if self.direction == "both" else f" {self.direction}"
-        return f"ORB {self.range_minutes}m / {target}{side}"
+        nr = ("" if self.max_range_ratio is None
+              else f" NR<={self.max_range_ratio:g}x{self.range_lookback}d")
+        return f"ORB {self.range_minutes}m / {target}{side}{nr}"
 
 
 @dataclass
@@ -112,8 +124,10 @@ class ORBTrades:
     entry: np.ndarray
     exit: np.ndarray
     risk_points: np.ndarray
+    range_points: np.ndarray  # opening range width, high - low
     pnl: np.ndarray         # dollars after costs
-    reason: np.ndarray      # target / stop / flatten / none / ambiguous / too_wide
+    reason: np.ndarray      # target / stop / flatten / none / ambiguous / too_wide /
+                            # filtered / warmup
     steps: np.ndarray       # (n_days, 3) dollars: to peak, to trough, to final
     multiplier: float       # dollars per point
 
@@ -164,7 +178,7 @@ def _bar_path(side, entry, stop, target, o, h, lo, c, slip, tick):
 def backtest(bars: IntradayBars, spec: ContractSpec, p: ORBParams) -> ORBTrades:
     tick = spec.tick
     n_range = p.range_minutes // p.bar_minutes
-    rows = []
+    rows, widths = [], []
     for date, sl in bars.days():
         minute = bars.minute[sl]
         o, h, lo, c = bars.open[sl], bars.high[sl], bars.low[sl], bars.close[sl]
@@ -173,13 +187,25 @@ def backtest(bars: IntradayBars, spec: ContractSpec, p: ORBParams) -> ORBTrades:
         if not np.array_equal(minute[in_range], expected):
             continue  # missing opening bars: late open, holiday or data gap
         or_high, or_low = h[in_range].max(), lo[in_range].min()
+        width = or_high - or_low
+        history = widths[-p.range_lookback:]
+        widths.append(width)
         tradable = np.flatnonzero((minute >= p.session_open + p.range_minutes)
                                   & (minute + p.bar_minutes <= p.flatten))
         buy_at = or_high + p.entry_ticks * tick
         sell_at = or_low - p.entry_ticks * tick
         risk_pts = buy_at - sell_at + p.slippage_ticks * tick * 2
         row = dict(date=date, side=0, contracts=0, entry=np.nan, exit=np.nan,
-                   risk_points=risk_pts, pnl=0.0, reason="none", steps=(0.0, 0.0, 0.0))
+                   risk_points=risk_pts, range_points=width, pnl=0.0, reason="none",
+                   steps=(0.0, 0.0, 0.0))
+        if p.max_range_ratio is not None:
+            if len(history) < p.range_lookback:
+                row["reason"] = "warmup"
+            elif width > p.max_range_ratio * np.median(history):
+                row["reason"] = "filtered"
+            if row["reason"] != "none":
+                rows.append(row)
+                continue
         for k, i in enumerate(tradable):
             up = h[i] >= buy_at and p.direction != "short"
             down = lo[i] <= sell_at and p.direction != "long"
@@ -220,6 +246,7 @@ def backtest(bars: IntradayBars, spec: ContractSpec, p: ORBParams) -> ORBTrades:
         entry=np.array([r["entry"] for r in rows], dtype=float),
         exit=np.array([r["exit"] for r in rows], dtype=float),
         risk_points=np.array([r["risk_points"] for r in rows], dtype=float),
+        range_points=np.array([r["range_points"] for r in rows], dtype=float),
         pnl=np.array([r["pnl"] for r in rows], dtype=float),
         reason=np.array([r["reason"] for r in rows]),
         steps=np.array([r["steps"] for r in rows], dtype=float),
