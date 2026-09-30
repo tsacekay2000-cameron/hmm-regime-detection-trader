@@ -256,14 +256,21 @@ created with "alert() function calls only". Alerts are per chart, so create one
 on each of `MES1!`, `MNQ1!`, `M2K1!`, `MYM1!`, `MGC1!` and `MCL1!`.
 
 `python -m examples.rsi2_trade_list` writes the Python backtest's trades to
-`pine/rsi2_mes_reference_trades.csv` (60 trades, +$8,643 per contract in prop
-mode), `pine/rsi2_mnq_reference_trades.csv` (55 trades, +$9,116) and
-`pine/rsi2_m2k_reference_trades.csv` (51 trades, +$2,515),
-`pine/rsi2_mym_reference_trades.csv` (60 trades, +$3,445) and
-`pine/rsi2_mgc_reference_trades.csv` (37 trades, +$748), 2020-02 to 2026-09, and
-`pine/rsi2_mcl_reference_trades.csv` (20 trades, -$981, from 2022-04), to compare with TradingView's List of trades. The strategy lists each
-session as its own trade, and small differences are expected where
-TradingView's back-adjusted prices put RSI or an average right at a threshold.
+`pine/rsi2_<symbol>_reference_trades.csv`, to compare with TradingView's List of
+trades (2020-02 to 2026-09; MCL from 2022-04). Prop-mode totals per contract:
+
+| Symbol | Trades | Prop P&L |
+|---|---|---|
+| MES | 60 | +$8,643 |
+| MNQ | 55 | +$9,116 |
+| M2K | 51 | +$2,515 |
+| MYM | 60 | +$3,445 |
+| MGC | 37 | +$748 |
+| MCL | 20 | -$981 |
+
+The strategy lists each session as its own trade, and small differences are
+expected where TradingView's back-adjusted prices put RSI or an average right at
+a threshold.
 
 `examples/data/mym_daily.csv` is TradingView `MYM1!`/`MYM2!` daily (micro Dow,
 2019-05 to 2026-09), which rolls on the MES/MNQ schedule.
