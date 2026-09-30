@@ -1,13 +1,13 @@
-"""RSI(2) pullback trades on MES, MNQ and M2K as reference lists for the Pine Script port.
+"""RSI(2) pullback trades on MES, MNQ, M2K and MGC as reference lists for the Pine Script port.
 
-Run from the repo root:  python -m examples.rsi2_trade_list [--symbols MES,MNQ,M2K]
+Run from the repo root:  python -m examples.rsi2_trade_list [--symbols MES,MNQ,M2K,MGC]
 
 Writes ``pine/rsi2_<symbol>_reference_trades.csv``: one row per trade with the
 signal close, the first and last session held, and the flat-through-breaks
 (prop) P&L for 1 contract after costs (commission $0.62 + 1 tick per side,
 a round trip every session), which is what ``pine/rsi2_pullback.pine``
 simulates in its default mode. Compare it with TradingView's List of trades
-for ``MES1!`` / ``MNQ1!`` / ``M2K1!`` on a daily chart with back-adjustment on; the Pine strategy
+for ``MES1!`` / ``MNQ1!`` / ``M2K1!`` / ``MGC1!`` on a daily chart with back-adjustment on; the Pine strategy
 counts each session as its own trade, so group its rows by entry date.
 """
 
@@ -41,7 +41,7 @@ def reference_trades(symbol: str = "MES") -> list[tuple[str, str, str, int, floa
 
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--symbols", default="MES,MNQ,M2K")
+    ap.add_argument("--symbols", default="MES,MNQ,M2K,MGC")
     args = ap.parse_args(argv)
     for symbol in args.symbols.upper().split(","):
         rows = reference_trades(symbol)
