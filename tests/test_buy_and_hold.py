@@ -27,7 +27,7 @@ def test_example_runs(capsys):
 
 def test_pine_script_defaults():
     src = (Path(__file__).parents[1] / "pine" / "buy_and_hold.pine").read_text()
-    for snippet in ("//@version=6", "commission_value = 0.62", "slippage = 1",
+    for snippet in ("//@version=6", "commission_value = 0.62", "slippage = 1", "margin_long = 10",
                     'input.float(3000, "Profit target ($)"', 'input.float(2000, "Trailing drawdown ($)"',
                     'input.int(250, "Sessions allowed"', 'timestamp("2020-02-25T00:00:00")'):
         assert snippet in src

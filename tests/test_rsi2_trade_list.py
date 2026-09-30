@@ -28,7 +28,7 @@ def test_pine_script_matches_the_tested_rules():
     assert "//@version=6" in src
     for snippet in ('input.int(2, "RSI length"', 'input.float(10, "Buy when RSI is below"',
                     'input.int(200, "Trend average (days)"', 'input.int(5, "Exit average (days)"',
-                    "commission_value = 0.62", "slippage = 1",
+                    "commission_value = 0.62", "slippage = 1", "margin_long = 10",
                     'root == "MNQ" or root == "MGC" or root == "MCL" ? 1 : root == "M2K" or root == "MYM" ? 3 : 2', "qty = qty"):
         assert snippet in src
 
