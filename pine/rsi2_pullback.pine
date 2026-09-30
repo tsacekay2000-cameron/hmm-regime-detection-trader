@@ -112,6 +112,12 @@ plot(useTrend ? trendMa : na, "Trend average", color = color.new(color.gray, 0),
 bgcolor(wasHeld ? color.new(color.teal, 88) : na, title = "Session in trade")
 plotshape(newSignal, "Buy signal", shape.triangleup, location.belowbar, color.teal, size = size.small, text = "RSI2")
 plotshape(exitSignal, "Exit signal", shape.xcross, location.abovebar, color.orange, size = size.tiny)
+// Today's trigger levels only: one horizontal line each with its price highlighted on the price
+// axis (show_last = 1 draws the latest value; trackprice extends it across the chart). They are
+// worked out at the last close for the next close, so offset = 1 puts them on the open bar.
+plot(not held and buyPossible ? buyBelow : na, "Buy signal if the close is below", color = #3DDC97, linewidth = 2, trackprice = true, show_last = 1, offset = 1, display = display.pane + display.price_scale)
+plot(not held and buyPossible and useTrend ? trendAbove : na, "...and above (trend filter)", color = #B2B5BE, linewidth = 1, trackprice = true, show_last = 1, offset = 1, display = display.pane + display.price_scale)
+plot(held ? exitAbove : na, "Exit signal if the close is above", color = #FF9F43, linewidth = 2, trackprice = true, show_last = 1, offset = 1, display = display.pane + display.price_scale)
 
 // ---------- Status panel ----------
 // Panel colors: a solid dark panel with light text, readable on light and dark chart themes
