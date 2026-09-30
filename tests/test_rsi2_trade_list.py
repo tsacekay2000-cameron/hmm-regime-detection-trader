@@ -1,6 +1,7 @@
 import csv
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from examples import rsi2_trade_list as ex
@@ -29,4 +30,23 @@ def test_pine_script_matches_the_tested_rules():
                     'input.int(200, "Trend average (days)"', 'input.int(5, "Exit average (days)"',
                     "commission_value = 0.62", "slippage = 1",
                     'root == "MNQ" or root == "MGC" or root == "MCL" ? 1 : root == "M2K" or root == "MYM" ? 3 : 2', "qty = qty"):
+        assert snippet in src
+
+
+def test_combined_plans_and_example(capsys):
+    from examples import rsi2_combined as cb
+    mes, mnq = np.array([1, 1, 0, 0]), np.array([1, 0, 1, 0])
+    p = cb.plans(mes, mnq)
+    np.testing.assert_array_equal(p["2 MES, else 1 MNQ"][1], [0, 0, 1, 0])
+    np.testing.assert_array_equal(p["1 MES + 1 MNQ"][0], mes)
+    cb.main(["--sims", "100", "--horizon", "60"])
+    out = capsys.readouterr().out
+    assert "both 143" in out and "2 MES only" in out and "+17,287" in out
+
+
+def test_combined_pine_alert_matches_the_rules():
+    src = (PINE / "rsi2_mes_mnq_alerts.pine").read_text()
+    for snippet in ("//@version=6", 'input.int(2, "RSI length"', 'input.float(10, "Buy when RSI is below"',
+                    'input.int(200, "Trend average (days)"', 'input.int(5, "Exit average (days)"',
+                    "backadjustment = backadjustment.on", "PLAN_MES", "alert(msg, alert.freq_once_per_bar_close)"):
         assert snippet in src
