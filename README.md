@@ -295,6 +295,30 @@ default.
 `examples/data/mym_daily.csv` is TradingView `MYM1!`/`MYM2!` daily (micro Dow,
 2019-05 to 2026-09), which rolls on the MES/MNQ schedule.
 
+## Buy & hold as a prop evaluation (`examples/buy_and_hold.py`, `pine/buy_and_hold.pine`)
+
+`python -m examples.buy_and_hold` compares buy & hold 1 MES (held, or flat
+through every daily break) with RSI(2) on 2 MES (held overnight, or flat through
+every break) from 2020-02-25, after costs:
+
+| | Net $ | Max DD | Every start | Bootstrap | No edge |
+|---|---|---|---|---|---|
+| Buy & hold, 1 MES | +18,368 | 6,067 | 39.9% | 38.9% | 22.3% |
+| Buy & hold, 1 MES, flat each break | +12,354 | 7,138 | 29.2% | 32.3% | 21.7% |
+| RSI(2), 2 MES, held overnight | +19,339 | 3,092 | 57.3% | 46.5% | 14.1% |
+| RSI(2), 2 MES, flat each break | +17,287 | 3,876 | 41.4% | 39.0% | 15.3% |
+
+Buy & hold makes money because the S&P rose, but its drawdown is three times the
+$2,000 limit: its pass rate by start year runs from 93% (2020, near the pandemic
+low) to 15% (2024) and 19% (2022, when it lost $4,737 per contract). It also
+prints net profit by calendar year.
+
+`pine/buy_and_hold.pine` is the TradingView version (hold or prop mode, same
+costs) with an evaluation check: from a start date it replays one $50k
+evaluation on the chart ($3,000 target, $2,000 end-of-day trailing drawdown,
+250 sessions) and marks the pass or failure. Its header lists the backtest's
+outcomes for several start dates to compare against.
+
 ## Trend following on MES (`examples/mes_trend.py`)
 
 `hmm_trader/trend.py` has three textbook rules on roll-adjusted daily closes,
