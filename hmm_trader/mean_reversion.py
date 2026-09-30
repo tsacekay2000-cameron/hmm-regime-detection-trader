@@ -93,6 +93,80 @@ def trade_spans(held: np.ndarray) -> list[tuple[int, int]]:
     return list(zip(np.flatnonzero(edges == 1), np.flatnonzero(edges == -1)))
 
 
+def true_range_atr(bars, roll: np.ndarray, n: int = 10) -> np.ndarray:
+    """Wilder ATR on daily bars; the previous close is the second-month close
+    on roll days, so the contract switch does not count as range."""
+    prev = np.r_[np.nan, np.where(roll[1:], bars.next_close[:-1], bars.close[:-1])]
+    tr = np.fmax(bars.high, prev) - np.fmin(bars.low, prev)
+    tr[0] = bars.high[0] - bars.low[0]
+    out = np.full(tr.size, np.nan)
+    if tr.size >= n:
+        out[n - 1] = tr[:n].mean()
+        for i in range(n, tr.size):
+            out[i] = (out[i - 1] * (n - 1) + tr[i]) / n
+    return out
+
+
+@dataclass
+class SessionTrades:
+    """Positions entered at each session open and closed by its close."""
+
+    steps: np.ndarray       # (n-1, 4) dollars per contract: costs, to high, to low, to close
+    pnl: np.ndarray         # per trade, dollars per contract after costs
+    stopped: np.ndarray     # per trade: stop hit
+    in_market: np.ndarray   # (n-1,) sessions actually held
+
+
+def flat_session_trades(
+    bars,
+    roll: np.ndarray,
+    held: np.ndarray,
+    multiplier: float,
+    cost_per_side: float,
+    stop_atr: Optional[float] = None,
+    atr_n: int = 10,
+) -> SessionTrades:
+    """Hold each ``held`` session from its open to its close (flat through the
+    daily break), with an optional stop ``stop_atr`` x ATR below the first
+    entry, kept fixed for the trade (shifted by the calendar spread on roll
+    days). A stop fills at the stop, or at the open if the session opens
+    below it, and ends the trade until the next signal. A trade whose signal
+    comes before ``atr_n`` sessions of data has no stop. Rows and ``held``
+    cover sessions 1..n-1, as in ``rsi2_positions``.
+
+    Each session is replayed open -> high -> low -> close, the worst order for
+    a long; a stopped session ends at the fill.
+    """
+    atr = true_range_atr(bars, roll, atr_n) if stop_atr is not None else None
+    steps = np.zeros((held.size, 4))
+    in_market = np.zeros(held.size, dtype=bool)
+    pnl, stopped = [], []
+    for s, e in trade_spans(held):
+        stop, total, hit = None, 0.0, False
+        for t in range(s, e):
+            b = t + 1  # bar index of session t
+            o, h, lo, c = bars.open[b], bars.high[b], bars.low[b], bars.close[b]
+            if stop is not None and roll[b]:
+                stop += bars.next_close[b - 1] - bars.close[b - 1]
+            if t == s and atr is not None and np.isfinite(atr[b - 1]):
+                stop = o - stop_atr * atr[b - 1]  # ATR known at the signal close
+            in_market[t] = True
+            row = [-2 * cost_per_side, (h - o) * multiplier, 0.0, 0.0]
+            if stop is not None and lo <= stop:
+                fill = min(o, stop)
+                row[2] = (fill - h) * multiplier
+                hit = True
+            else:
+                row[2], row[3] = (lo - h) * multiplier, (c - lo) * multiplier
+            steps[t] = row
+            total += sum(row)
+            if hit:
+                break
+        pnl.append(total)
+        stopped.append(hit)
+    return SessionTrades(steps, np.array(pnl), np.array(stopped, dtype=bool), in_market)
+
+
 # ---------------------------------------------------------------------------
 # Intraday Bollinger fade
 # ---------------------------------------------------------------------------

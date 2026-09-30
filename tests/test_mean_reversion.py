@@ -136,3 +136,54 @@ def test_example_part_c_flat_through_breaks(capsys):
     assert "C. RSI(2) flat through every daily break, 1 MES" in out
     assert "V2 09:30 -> 15:55 ET only" in out  # MES has 5-min data
     assert "5 M2K, bootstrap" in out and "1 M2K, bootstrap" not in out
+
+
+def daily_bars(rows, next_close=None):
+    arr = np.array(rows, dtype=float)
+    n = len(arr)
+    nc = arr[:, 3] if next_close is None else np.asarray(next_close, dtype=float)
+    return fu.FuturesBars(np.array([f"2025-01-{i + 1:02d}" for i in range(n)]),
+                          arr[:, 0], arr[:, 1], arr[:, 2], arr[:, 3], nc)
+
+
+def test_true_range_atr_uses_second_month_on_roll():
+    b = daily_bars([(10, 11, 9, 10)] * 4 + [(20, 21, 19, 20)], next_close=[20] * 5)
+    roll = np.array([False, False, False, False, True])
+    atr = mr.true_range_atr(b, roll, n=2)
+    # the roll-day jump to 20 is measured from the second-month close (20): TR = 2
+    assert atr[4] == pytest.approx((atr[3] * 1 + 2) / 2)
+    assert np.isnan(atr[0])
+
+
+def test_flat_session_trades_stop_and_no_stop():
+    # signal at close 0; sessions 1-3 held; ATR(1) at close 0 = 2 -> stop 2 below entry
+    b = daily_bars([(100, 101, 99, 100), (100, 101, 99.5, 100.5), (100.5, 101, 97, 97.5),
+                    (97.5, 104, 97, 103)])
+    roll = np.zeros(4, dtype=bool)
+    held = np.array([True, True, True])
+    free = mr.flat_session_trades(b, roll, held, multiplier=5, cost_per_side=1)
+    assert list(free.pnl) == pytest.approx([(0.5 - 3 + 5.5) * 5 - 6])
+    np.testing.assert_allclose(free.steps.sum(axis=1), [0.5 * 5 - 2, -3 * 5 - 2, 5.5 * 5 - 2])
+    stop = mr.flat_session_trades(b, roll, held, multiplier=5, cost_per_side=1,
+                                  stop_atr=1.0, atr_n=1)
+    assert list(stop.stopped) == [True]
+    # stop = 100 - 2 = 98, hit in session 2 (low 97), fill at 98; session 3 not traded
+    assert stop.pnl[0] == pytest.approx((0.5 + (98 - 100.5)) * 5 - 4)
+    assert list(stop.in_market) == [True, True, False]
+    # no ATR yet at the signal (ATR(2) needs two bars) -> no stop for that trade
+    late = mr.flat_session_trades(b, roll, held, multiplier=5, cost_per_side=1,
+                                  stop_atr=1.0, atr_n=2)
+    assert list(late.stopped) == [False] and late.pnl[0] == pytest.approx(free.pnl[0])
+
+
+def test_flat_session_trades_matches_session_steps_without_stop():
+    from examples.micro_futures_backtest import session_steps
+    spec = fu.CONTRACTS["MES"]
+    from pathlib import Path
+    bars = fu.load_bars(Path(__file__).parents[1] / "examples" / "data" / "mes_daily.csv")
+    roll = fu.quarterly_roll_mask(bars.dates, spec.roll_sessions)
+    adj = bars.close[0] * np.r_[1.0, np.cumprod(1 + fu.adjusted_returns(bars, roll))]
+    held = mr.rsi2_positions(adj)
+    ref = session_steps(bars, held, spec, overnight=False, cost_per_side=2.0)
+    new = mr.flat_session_trades(bars, roll, held, spec.multiplier, 2.0)
+    np.testing.assert_allclose(new.steps, ref)

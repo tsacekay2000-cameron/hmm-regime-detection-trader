@@ -19,6 +19,10 @@ C. (``--part c``) RSI(2) for prop firms that require being flat through the
    paying a round trip every session (V1). V2 holds only 09:30-15:55 ET on
    the same days, from the 5-minute data (MES/MNQ, 2024-10 onward only).
 
+D. (``--part d``) V1 with a stop k x ATR(10) below the first entry, for k in
+   none / 1.5 / 2 / 3 (all shown, none picked), and prop pass rates for each
+   next to its zero-edge baseline.
+
 B. Intraday Bollinger fade on 5-minute bars, $200 risk per trade: fade a
    close outside the 20-bar +/- 2 sd band at the next open, stop 2 sd away,
    exit on a close back through the average or at 15:55 ET. Flat every
@@ -238,6 +242,48 @@ def part_c(args, rng: np.random.Generator, symbol: str) -> None:
         prop_rows(f"{n} {symbol}", flat[sl] * n, held[sl], args, rng)
 
 
+STOPS = (None, 1.5, 2.0, 3.0)  # ATR multiples; fixed before looking at results
+
+
+def part_d(args, rng: np.random.Generator, symbol: str) -> None:
+    spec = fu.CONTRACTS[symbol]
+    cost = 0.62 + spec.tick_value
+    bars = fu.load_bars(DATA_DIR / f"{symbol.lower()}_daily.csv")
+    roll = fu.quarterly_roll_mask(bars.dates, spec.roll_sessions)
+    adj_close = bars.close[0] * np.r_[1.0, np.cumprod(1 + fu.adjusted_returns(bars, roll))]
+    held = mr.rsi2_positions(adj_close)
+    dates = bars.dates[1:]
+    start = int(np.argmax(np.isfinite(mr.sma(adj_close, 200))))
+    sl = slice(start, None)
+    runs = {k: mr.flat_session_trades(bars, roll, held, spec.multiplier, cost, stop_atr=k)
+            for k in STOPS}
+
+    print(f"== D. RSI(2) flat through breaks (V1) with a stop k x ATR(10) below the entry, "
+          f"1 {symbol}, {dates[start]} .. {dates[-1]} ==")
+    print(f"  {'stop':<10}{'trades':>7}{'stopped':>9}{'win':>6}{'avg $':>8}{'net $':>9}"
+          f"{'max DD':>8}{'worst trade':>13}{'worst day':>11}")
+    for k, r in runs.items():
+        daily = r.steps[sl].sum(axis=1)
+        print(f"  {'none' if k is None else f'{k:g} ATR':<10}{r.pnl.size:>7}"
+              f"{r.stopped.mean():>9.0%}{np.mean(r.pnl > 0):>6.0%}{r.pnl.mean():>+8.0f}"
+              f"{r.pnl.sum():>+9,.0f}{max_drawdown(daily):>8,.0f}{r.pnl.min():>+13,.0f}"
+              f"{daily.min():>+11,.0f}")
+
+    print(f"\n  Prop evaluation, bootstrap, {args.horizon} sessions max "
+          f"(pass rate, then zero-edge baseline):")
+    print(f"  {'contracts':<10}" + "".join(
+        f"{'none' if k is None else f'{k:g} ATR':>18}" for k in STOPS))
+    idx = block_bootstrap_index(held[sl].size, args.sims, args.horizon, 10, rng)
+    for n in args.contracts:
+        cells = []
+        for k, r in runs.items():
+            steps = r.steps[sl] * n
+            rates = [pf.simulate_challenge(x[idx] / ACCOUNT, RULES, compounding=False).pass_rate
+                     for x in (steps, demean(steps, r.in_market[sl]))]
+            cells.append(f"{rates[0]:>7.1%} vs {rates[1]:>5.1%}")
+        print(f"  {n:<10}" + "".join(f"{c:>18}" for c in cells))
+
+
 def part_b(args, rng: np.random.Generator) -> None:
     bars = orb.load_intraday(DATA_DIR / "mes_5min_rth.csv.gz")
     p = mr.FadeParams()
@@ -278,8 +324,8 @@ def part_b(args, rng: np.random.Generator) -> None:
 
 def main(argv: Optional[list[str]] = None) -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--part", choices=("a", "b", "c", "both", "all"), default="both",
-                    help="both = A and B; all = A, B and C")
+    ap.add_argument("--part", choices=("a", "b", "c", "d", "both", "all"), default="both",
+                    help="both = A and B; all = A, B, C and D")
     ap.add_argument("--contracts", default="1,2,3",
                     type=lambda t: [int(x) for x in t.split(",") if int(x) > 0],
                     help="contract counts for the prop evaluations in parts A and C")
@@ -304,6 +350,10 @@ def main(argv: Optional[list[str]] = None) -> None:
     if args.part in ("c", "all"):
         for symbol in symbols:
             part_c(args, rng, symbol)
+            print()
+    if args.part in ("d", "all"):
+        for symbol in symbols:
+            part_d(args, rng, symbol)
             print()
     if args.part in ("b", "both", "all"):
         part_b(args, rng)
