@@ -8,7 +8,7 @@ this data (see ``hmm_trader.trend``); 1 contract, after costs (commission +
 1 tick per side, a round trip for each roll carried):
 
 - SMA 50/200 long/flat, and long/short
-- Donchian 55-day breakout / 20-day exit, long/short (Turtle-style)
+- Donchian 55-day breakout / 20-day exit, long/short (Turtle-style) and long only
 - 12-month time-series momentum, long/short
 
 S&P futures rose a lot in 2020-2026, so any rule that is mostly long looks
@@ -42,6 +42,7 @@ PRIMARY = {
     "SMA 50/200 long/flat": lambda c: tr.sma_cross_positions(c, 50, 200),
     "SMA 50/200 long/short": lambda c: tr.sma_cross_positions(c, 50, 200, allow_short=True),
     "Donchian 55/20 L/S": lambda c: tr.donchian_positions(c, 55, 20),
+    "Donchian 55/20 long only": lambda c: tr.donchian_positions(c, 55, 20, allow_short=False),
     "TSMOM 12m L/S": lambda c: tr.tsmom_positions(c, 252),
 }
 SENSITIVITY = {
@@ -77,7 +78,7 @@ def main(argv: Optional[list[str]] = None) -> None:
     spec = fu.CONTRACTS[symbol]
     cost = 0.62 + spec.tick_value
     bars = fu.load_bars(path)
-    roll = fu.quarterly_roll_mask(bars.dates, spec.roll_sessions)
+    roll = fu.roll_mask(bars.dates, spec)
     close = bars.close[0] * np.r_[1.0, np.cumprod(1 + fu.adjusted_returns(bars, roll))]
     dates = bars.dates[1:]
     sl = slice(WARMUP, None)
@@ -130,9 +131,14 @@ def main(argv: Optional[list[str]] = None) -> None:
             cells.append(f"{label}: {daily.sum():+,.0f} (p {p:.2f})")
         print(f"  {family:<16}" + "   ".join(cells))
 
-    print(f"\n  Prop evaluation, flat through every daily break (entered at each session open), "
-          f"{args.horizon} sessions max,\n  bootstrap pass rate vs zero-edge baseline "
+    print(f"\n  Prop evaluation, flat through every daily break (bought at each session open, "
+          f"sold at the daily close, {spec.daily_close_et} ET), {args.horizon} sessions max,\n"
+          f"  bootstrap pass rate vs zero-edge baseline "
           f"($50k, $3k target, $2k EOD trailing drawdown):")
+    if spec.daily_close_et < "16:00":
+        print(f"  Note: {symbol}'s daily close is its {spec.daily_close_et} ET settlement, so this "
+              f"version is also flat from then until the break, hours a prop account could "
+              f"trade.")
     print(f"  {'':<24}" + "".join(f"{str(n) + ' ' + symbol:>18}" for n in args.contracts)
           + f"{'net $ (1 contract)':>21}")
     idx = block_bootstrap_index(dates.size - WARMUP, args.sims, args.horizon, 10, rng)

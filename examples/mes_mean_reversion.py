@@ -97,7 +97,7 @@ def part_a(args, rng: np.random.Generator, symbol: str = "MES") -> None:
     spec = fu.CONTRACTS[symbol]
     cost = 0.62 + spec.tick_value  # commission + 1 tick slippage per side
     bars = fu.load_bars(DATA_DIR / f"{symbol.lower()}_daily.csv")
-    roll = fu.quarterly_roll_mask(bars.dates, spec.roll_sessions)
+    roll = fu.roll_mask(bars.dates, spec)
     rets = fu.adjusted_returns(bars, roll)
     adj_close = bars.close[0] * np.r_[1.0, np.cumprod(1 + rets)]
     held = mr.rsi2_positions(adj_close)                       # sessions 1..n-1
@@ -190,7 +190,7 @@ def part_c(args, rng: np.random.Generator, symbol: str) -> None:
     spec = fu.CONTRACTS[symbol]
     cost = 0.62 + spec.tick_value
     bars = fu.load_bars(DATA_DIR / f"{symbol.lower()}_daily.csv")
-    roll = fu.quarterly_roll_mask(bars.dates, spec.roll_sessions)
+    roll = fu.roll_mask(bars.dates, spec)
     adj_close = bars.close[0] * np.r_[1.0, np.cumprod(1 + fu.adjusted_returns(bars, roll))]
     held = mr.rsi2_positions(adj_close)
     dates = bars.dates[1:]
@@ -253,7 +253,7 @@ def part_d(args, rng: np.random.Generator, symbol: str) -> None:
     spec = fu.CONTRACTS[symbol]
     cost = 0.62 + spec.tick_value
     bars = fu.load_bars(DATA_DIR / f"{symbol.lower()}_daily.csv")
-    roll = fu.quarterly_roll_mask(bars.dates, spec.roll_sessions)
+    roll = fu.roll_mask(bars.dates, spec)
     adj_close = bars.close[0] * np.r_[1.0, np.cumprod(1 + fu.adjusted_returns(bars, roll))]
     held = mr.rsi2_positions(adj_close)
     dates = bars.dates[1:]
@@ -295,7 +295,7 @@ def part_e(args, rng: np.random.Generator, symbol: str) -> None:
     spec = fu.CONTRACTS[symbol]
     cost = 0.62 + spec.tick_value
     bars = fu.load_bars(DATA_DIR / f"{symbol.lower()}_daily.csv")
-    roll = fu.quarterly_roll_mask(bars.dates, spec.roll_sessions)
+    roll = fu.roll_mask(bars.dates, spec)
     adj_close = bars.close[0] * np.r_[1.0, np.cumprod(1 + fu.adjusted_returns(bars, roll))]
     held = mr.rsi2_positions(adj_close)
     dates = bars.dates[1:]

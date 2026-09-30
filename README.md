@@ -243,7 +243,15 @@ position series in time (same exposure and trade lengths, scrambled timing).
 ```bash
 python -m examples.mes_trend                     # MES, 2020-05 .. 2026-09
 python -m examples.mes_trend --symbol MNQ --contracts 1,2
+python -m examples.mes_trend --symbol MGC --contracts 1,2,3   # gold
 ```
+
+`examples/data/mgc_daily.csv` is TradingView `MGC1!`/`MGC2!` daily, 2019-05 to
+2026-09. Gold rolls to the next active month (Feb/Apr/Jun/Aug/Dec) on the
+second-to-last session of Jan/Mar/May/Jul/Nov (`futures.gold_roll_mask`, chosen
+per contract by `ContractSpec.roll_rule`). Its daily close is the 13:30 ET
+settlement (`ContractSpec.daily_close_et`), so the flat-through-breaks version on
+gold is also flat for the 13:30-16:10 ET hours a prop account could trade.
 
 The example compares each rule with buy & hold, reports the timing test, net by
 year, a fast/slow sensitivity table and prop pass rates (flat through every

@@ -97,3 +97,22 @@ def test_m2k_rolls_one_session_later():
     # Wednesday of expiry week; Tuesday when Juneteenth falls in it (checked vs RUT)
     for d in ("2024-12-18", "2025-06-17", "2026-06-16", "2026-09-16"):
         assert d in b.dates[mask]
+
+
+def test_gold_roll_mask_and_dispatch():
+    b = fu.load_bars(fu.Path(__file__).parents[1] / "examples" / "data" / "mgc_daily.csv")
+    spec = fu.CONTRACTS["MGC"]
+    mask = fu.roll_mask(b.dates, spec)
+    # matched against individual MGC contracts (Massive, 2024-2026)
+    for d in ("2024-11-27", "2025-01-30", "2025-03-28", "2025-05-29", "2025-07-30",
+              "2025-11-26", "2026-01-29", "2026-05-28", "2026-07-30"):
+        assert d in b.dates[mask]
+    assert {d[5:7] for d in b.dates[mask]} == {"01", "03", "05", "07", "11"}
+    # second-to-last session of the month; an unfinished last month is skipped
+    dates = ["2025-01-28", "2025-01-29", "2025-01-30", "2025-01-31", "2025-02-03",
+             "2025-03-27", "2025-03-28"]
+    assert list(np.flatnonzero(fu.gold_roll_mask(dates))) == [2]
+    np.testing.assert_array_equal(fu.roll_mask(b.dates, fu.CONTRACTS["MES"]),
+                                  fu.quarterly_roll_mask(b.dates, 3))
+    with pytest.raises(ValueError):
+        fu.roll_mask(b.dates, fu.ContractSpec("X", 1.0, 1.0, roll_rule="weekly"))
