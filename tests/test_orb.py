@@ -130,9 +130,15 @@ def test_load_intraday_gz_and_sorting(tmp_path):
         orb.load_intraday(p)
 
 
-def test_bundled_data_is_regular_session_front_month():
+@pytest.mark.parametrize("name, first, last", [
+    ("mes", 9 * 60 + 30, 15 * 60 + 55), ("mnq", 9 * 60 + 30, 15 * 60 + 55),
+    ("mgc", 8 * 60, 15 * 60 + 55), ("mcl", 8 * 60, 15 * 60 + 55),
+])
+def test_bundled_data_sessions_and_ohlc(name, first, last):
     from pathlib import Path
-    b = orb.load_intraday(Path(__file__).parents[1] / "examples" / "data" / "mes_5min_rth.csv.gz")
-    assert b.minute.min() == 9 * 60 + 30 and b.minute.max() == 15 * 60 + 55
+    path = Path(__file__).parents[1] / "examples" / "data" / f"{name}_5min_rth.csv.gz"
+    b = orb.load_intraday(path)
+    assert b.minute.min() == first and b.minute.max() == last
     assert np.all(b.high >= np.maximum(b.open, b.close))
     assert np.all(b.low <= np.minimum(b.open, b.close))
+    assert np.unique(b.date).size > 450
