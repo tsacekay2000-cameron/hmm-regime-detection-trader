@@ -249,9 +249,9 @@ passed 7.6% of evaluations against 7.0% with no edge), and on crude (from
 2022) prop mode lost money (p = 0.41) and passed almost no evaluations. Gold's
 and crude's daily closes are their 1:30 and 2:30 PM ET settlements, so prop
 mode on them sells then.
-It shows the closing prices that would trigger a buy or an exit at the next
-close (`mean_reversion.rsi2_levels` computes the same levels), labels each
-signal with its price, plots the trend average, shades the sessions in a trade, shows a status panel
+Its status panel lists the closing prices that would trigger a buy or an exit
+at the next close (`mean_reversion.rsi2_levels` computes the same levels). It
+plots the trend average, shades the sessions in a trade, shows a status panel
 (RSI, trend filter, what to do at the next open, size, backtest evidence) and
 sends alerts at the daily close, naming the symbol and size, when an alert is
 created with "alert() function calls only". Alerts are per chart, so create one

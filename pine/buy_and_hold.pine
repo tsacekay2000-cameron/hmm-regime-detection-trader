@@ -84,8 +84,6 @@ entryPx  = strategy.position_size > 0 ? strategy.opentrades.entry_price(0) : na
 live     = not isProp and started and not done and posValue > 0
 targetPx = live ? close + (target - pnl) / posValue : na
 failPx   = live ? close - (pnl - math.min(peak - maxDd, 0.0)) / posValue : na
-plot(showEval ? targetPx : na, "Evaluation passes on a close at or above", color = color.new(#3DDC97, 0), style = plot.style_linebr, linewidth = 2, offset = 1)
-plot(showEval ? failPx : na, "Evaluation fails if price touches", color = color.new(#FF6B6B, 0), style = plot.style_linebr, linewidth = 2, offset = 1)
 
 // ---------- Orders ----------
 // Market orders placed at a bar's close fill at the next bar's open (the 6 PM ET session open).

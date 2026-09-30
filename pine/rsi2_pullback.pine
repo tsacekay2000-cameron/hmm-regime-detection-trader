@@ -34,7 +34,7 @@ strategy("RSI(2) Pullback", shorttitle = "RSI2 PB", overlay = true,
   default_qty_type = strategy.fixed, default_qty_value = 2,
   commission_type = strategy.commission.cash_per_contract, commission_value = 0.62,
   slippage = 1, pyramiding = 0, process_orders_on_close = false,
-  margin_long = 10, margin_short = 10, max_labels_count = 500)
+  margin_long = 10, margin_short = 10)
 
 // ---------- Inputs ----------
 MODE_PROP = "Prop: flat through each daily break"
@@ -50,8 +50,6 @@ qtyIn      = input.int(0, "Contracts (0 = tested size)", minval = 0,
   tooltip = "0 uses the size tested for a $50k evaluation with a $2,000 trailing drawdown: 2 MES, 1 MNQ, 3 M2K, 3 MYM, 1 MGC, 1 MCL (2 on anything else).")
 startTime  = input.time(timestamp("2019-01-01T00:00:00"), "Take signals from", group = "Backtest")
 showPanel  = input.bool(true, "Show status panel", group = "Display")
-showLevels = input.bool(true, "Show buy and exit price levels", group = "Display")
-showLabels = input.bool(true, "Label signals with their price", group = "Display")
 
 isProp = mode == MODE_PROP
 root   = syminfo.root
@@ -112,15 +110,8 @@ else
 // ---------- Plots ----------
 plot(useTrend ? trendMa : na, "Trend average", color = color.new(color.gray, 0), linewidth = 2)
 bgcolor(wasHeld ? color.new(color.teal, 88) : na, title = "Session in trade")
-// levels drawn on the bar whose close they apply to (one bar ahead, including today's open bar)
-plot(showLevels and not held and buyPossible ? buyBelow : na, "Buy signal if the close is below", color = color.new(#3DDC97, 0), style = plot.style_linebr, linewidth = 2, offset = 1)
-plot(showLevels and held ? exitAbove : na, "Exit signal if the close is above", color = color.new(#FF9F43, 0), style = plot.style_linebr, linewidth = 2, offset = 1)
-if showLabels and newSignal
-    label.new(bar_index, low, "BUY signal\nclose " + str.tostring(close, format.mintick) + "\nbuy " + sizeTxt + " at next open\nexit above " + str.tostring(exitAbove, format.mintick),
-      style = label.style_label_up, color = color.new(#1E8C62, 0), textcolor = color.white, size = size.small)
-if showLabels and exitSignal
-    label.new(bar_index, high, "EXIT\nclose " + str.tostring(close, format.mintick),
-      style = label.style_label_down, color = color.new(#D9822B, 0), textcolor = color.white, size = size.small)
+plotshape(newSignal, "Buy signal", shape.triangleup, location.belowbar, color.teal, size = size.small, text = "RSI2")
+plotshape(exitSignal, "Exit signal", shape.xcross, location.abovebar, color.orange, size = size.tiny)
 
 // ---------- Status panel ----------
 // Panel colors: a solid dark panel with light text, readable on light and dark chart themes
