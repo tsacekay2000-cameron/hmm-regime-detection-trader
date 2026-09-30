@@ -161,14 +161,22 @@ counts as a stop, gaps fill at the open.
 
 ```bash
 python -m examples.orb_backtest                        # MES + MNQ, $200 risk grid
+python -m examples.orb_backtest --symbols MGC,MCL      # micro gold and crude
 python -m examples.orb_backtest --symbols MNQ --risk 200,400 --split 2025-07-01
 ```
+
+Session times per symbol (`SESSIONS` in the example): MES/MNQ range from 09:30 ET,
+flat by 15:55; MGC from the 08:20 ET pit open, flat by the 13:30 settlement; MCL
+from 09:00 ET, flat by 14:30.
 
 The example picks the best grid point on data before `--split` and reports it on
 the unseen data after, then scores it as a $50k prop evaluation next to a
 zero-edge baseline (the same trades minus their average profit).
 
-Bundled data: `examples/data/{mes,mnq}_5min_rth.csv.gz`, regular-session 5-minute
-bars of the front contract (rolled on the same calendar as `hmm_trader.futures`)
-from Massive.com, 2024-10-01 to 2026-09-28, times in US/Eastern. The vendor data
-has a few mid-session gaps (5 days); the backtest resumes at the next bar's open.
+Bundled data: `examples/data/{mes,mnq,mgc,mcl}_5min_rth.csv.gz`, 5-minute bars of
+the front contract from Massive.com, 2024-10-01 to 2026-09-28, times in
+US/Eastern. MES/MNQ cover 09:30-16:00 and roll on the `hmm_trader.futures`
+calendar; MGC/MCL cover 08:00-16:00 and use each day's highest-volume contract
+(never rolling back), which puts gold on Feb/Apr/Jun/Aug/Dec and crude on the
+next monthly contract about a week before expiry. The vendor data has a few
+mid-session gaps; the backtest resumes at the next bar's open.
