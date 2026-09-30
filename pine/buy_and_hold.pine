@@ -76,6 +76,17 @@ if started and not done
           style = result == "PASSED" ? label.style_label_down : label.style_label_up,
           color = result == "PASSED" ? color.new(color.teal, 0) : color.new(color.red, 0), textcolor = color.white)
 
+// ---------- Prices that end the evaluation (hold mode) ----------
+// With the position open: the close that reaches the profit target, and the price whose touch
+// puts the balance on the trailing-drawdown floor (the floor after today's close).
+posValue = syminfo.pointvalue * strategy.position_size
+entryPx  = strategy.position_size > 0 ? strategy.opentrades.entry_price(0) : na
+live     = not isProp and started and not done and posValue > 0
+targetPx = live ? close + (target - pnl) / posValue : na
+failPx   = live ? close - (pnl - math.min(peak - maxDd, 0.0)) / posValue : na
+plot(showEval ? targetPx : na, "Evaluation passes on a close at or above", color = color.new(#3DDC97, 0), style = plot.style_linebr, linewidth = 2, offset = 1)
+plot(showEval ? failPx : na, "Evaluation fails if price touches", color = color.new(#FF6B6B, 0), style = plot.style_linebr, linewidth = 2, offset = 1)
+
 // ---------- Orders ----------
 // Market orders placed at a bar's close fill at the next bar's open (the 6 PM ET session open).
 if isProp
@@ -96,7 +107,7 @@ PANEL_BG   = #1E222D
 PANEL_TEXT = #F0F3FA
 PANEL_OK   = #3DDC97
 PANEL_BAD  = #FF6B6B
-var table panel = table.new(position.top_right, 2, 5, bgcolor = PANEL_BG, frame_color = #434651, frame_width = 1, border_color = #2A2E39, border_width = 1)
+var table panel = table.new(position.top_right, 2, 8, bgcolor = PANEL_BG, frame_color = #434651, frame_width = 1, border_color = #2A2E39, border_width = 1)
 // the last confirmed bar: this strategy only runs when a bar closes, so it never sees the open one
 if showEval and bar_index >= last_bar_index - 1
     color resColor = result == "PASSED" ? PANEL_OK : str.startswith(result, "FAILED") ? PANEL_BAD : PANEL_TEXT
@@ -108,5 +119,11 @@ if showEval and bar_index >= last_bar_index - 1
     table.cell(panel, 1, 2, str.tostring(peak, "$#,###"), text_color = PANEL_TEXT)
     table.cell(panel, 0, 3, "P&L now", text_halign = text.align_left, text_color = PANEL_TEXT)
     table.cell(panel, 1, 3, str.tostring(pnl, "$#,###"), text_color = PANEL_TEXT)
-    table.cell(panel, 0, 4, "Chart", text_halign = text.align_left, text_color = PANEL_TEXT)
-    table.cell(panel, 1, 4, timeframe.isdaily ? "daily: OK" : "switch to a 1D chart", text_color = timeframe.isdaily ? PANEL_OK : PANEL_BAD)
+    table.cell(panel, 0, 4, "Bought at", text_halign = text.align_left, text_color = PANEL_TEXT)
+    table.cell(panel, 1, 4, na(entryPx) ? (isProp ? "each 6 PM ET open" : "-") : str.tostring(entryPx, format.mintick), text_color = PANEL_TEXT)
+    table.cell(panel, 0, 5, "Pass (sell) on a close at or above", text_halign = text.align_left, text_color = PANEL_TEXT)
+    table.cell(panel, 1, 5, na(targetPx) ? (isProp ? "n/a in prop mode" : "-") : str.tostring(targetPx, format.mintick), text_color = PANEL_OK)
+    table.cell(panel, 0, 6, "Fail if price touches", text_halign = text.align_left, text_color = PANEL_TEXT)
+    table.cell(panel, 1, 6, na(failPx) ? (isProp ? "n/a in prop mode" : "-") : str.tostring(failPx, format.mintick), text_color = PANEL_BAD)
+    table.cell(panel, 0, 7, "Chart", text_halign = text.align_left, text_color = PANEL_TEXT)
+    table.cell(panel, 1, 7, timeframe.isdaily ? "daily: OK" : "switch to a 1D chart", text_color = timeframe.isdaily ? PANEL_OK : PANEL_BAD)

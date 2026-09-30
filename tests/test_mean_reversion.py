@@ -214,3 +214,30 @@ def test_trade_stop_wins_when_it_is_the_higher_level():
                                stop_atr=1.0, atr_n=1, session_stop=3.0)
     assert list(r.stopped) == [True] and not r.limit_hit.any()
     assert list(r.in_market) == [True, True, False]
+
+
+def test_rsi2_levels_predict_the_next_close():
+    rng = np.random.default_rng(3)
+    c = 5000 + np.cumsum(rng.normal(0, 30, 400))
+    buy_below, trend_above, exit_above = mr.rsi2_levels(c)
+    for t in range(250, 399):
+        for px, below in ((buy_below[t] - 0.01, True), (buy_below[t] + 0.01, False)):
+            nxt = np.r_[c[:t + 1], px]
+            assert (mr.rsi(nxt, 2)[-1] < 10) == below
+        for level, n in ((trend_above[t], 200), (exit_above[t], 5)):
+            for px, above in ((level + 0.01, True), (level - 0.01, False)):
+                nxt = np.r_[c[:t + 1], px]
+                assert (nxt[-1] > mr.sma(nxt, n)[-1]) == above
+    # on MES, every RSI(2) entry closed inside the buy zone the day before predicted
+    from hmm_trader import futures as fu
+    from pathlib import Path
+    b = fu.load_bars(Path(__file__).parents[1] / "examples" / "data" / "mes_daily.csv")
+    roll = fu.roll_mask(b.dates, fu.CONTRACTS["MES"])
+    adj = b.close[0] * np.r_[1.0, np.cumprod(1 + fu.adjusted_returns(b, roll))]
+    held = mr.rsi2_positions(adj)
+    bb, tf, ex = mr.rsi2_levels(adj)
+    for s, e in mr.trade_spans(held):
+        sig = s  # the close at index s (bars) started the trade held from session s
+        assert tf[sig - 1] < adj[sig] < bb[sig - 1]
+        if e < held.size:  # the close that ended it was above the exit level
+            assert adj[e] > ex[e - 1]
