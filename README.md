@@ -149,3 +149,26 @@ python -m examples.micro_futures_backtest --symbols MNQ --contracts 1,2 --overni
 Bundled data: `examples/data/{mes,mnq}_daily.csv`, TradingView `CME_MINI:MES1!`
 / `MNQ1!` daily bars from 2019-05-06 to 2026-09-29 dated by trade date, with the
 `2!` close as `next_close`.
+
+## Opening range breakout on MES / MNQ (`examples/orb_backtest.py`)
+
+`hmm_trader/orb.py` backtests a one-trade-a-day opening range breakout on 5-minute
+bars: stop entries one tick beyond the first 5/15/30 minutes' range after 09:30
+ET, stop at the other side, exit at 1R / 2R or flat at 15:55 ET, sized to a fixed
+dollar risk (days too wide for one contract are skipped). Fills are conservative:
+a tick of slippage on stop entries and exits, a bar touching both stop and target
+counts as a stop, gaps fill at the open.
+
+```bash
+python -m examples.orb_backtest                        # MES + MNQ, $200 risk grid
+python -m examples.orb_backtest --symbols MNQ --risk 200,400 --split 2025-07-01
+```
+
+The example picks the best grid point on data before `--split` and reports it on
+the unseen data after, then scores it as a $50k prop evaluation next to a
+zero-edge baseline (the same trades minus their average profit).
+
+Bundled data: `examples/data/{mes,mnq}_5min_rth.csv.gz`, regular-session 5-minute
+bars of the front contract (rolled on the same calendar as `hmm_trader.futures`)
+from Massive.com, 2024-10-01 to 2026-09-28, times in US/Eastern. The vendor data
+has a few mid-session gaps (5 days); the backtest resumes at the next bar's open.
