@@ -39,14 +39,19 @@ def test_combined_plans_and_example(capsys):
     p = cb.plans(mes, mnq)
     np.testing.assert_array_equal(p["2 MES, else 1 MNQ"][1], [0, 0, 1, 0])
     np.testing.assert_array_equal(p["1 MES + 1 MNQ"][0], mes)
+    q = cb.plans(mes, mnq, "MYM")
+    np.testing.assert_array_equal(q["2 MES, else 3 MYM"][1], [0, 0, 3, 0])
+    np.testing.assert_array_equal(q["1 MES + 2 MYM"][1], [2, 0, 2, 0])
     cb.main(["--sims", "100", "--horizon", "60"])
     out = capsys.readouterr().out
-    assert "both 143" in out and "2 MES only" in out and "+17,287" in out
+    assert "both 143" in out and "both 141" in out and "+17,287" in out
+    assert "MYM alone 76" in out
 
 
 def test_combined_pine_alert_matches_the_rules():
-    src = (PINE / "rsi2_mes_mnq_alerts.pine").read_text()
+    src = (PINE / "rsi2_combined_alerts.pine").read_text()
     for snippet in ("//@version=6", 'input.int(2, "RSI length"', 'input.float(10, "Buy when RSI is below"',
                     'input.int(200, "Trend average (days)"', 'input.int(5, "Exit average (days)"',
-                    "backadjustment = backadjustment.on", "PLAN_MES", "alert(msg, alert.freq_once_per_bar_close)"):
+                    "backadjustment = backadjustment.on", "PLAN_MES", "alert(msg, alert.freq_once_per_bar_close)",
+                    'options = ["MNQ", "MYM"]', 'qtyB   = second == "MNQ" ? 1 : plan == PLAN_BOTH ? 2 : 3'):
         assert snippet in src

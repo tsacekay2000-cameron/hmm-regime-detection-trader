@@ -272,21 +272,24 @@ The strategy lists each session as its own trade, and small differences are
 expected where TradingView's back-adjusted prices put RSI or an average right at
 a threshold.
 
-`pine/rsi2_mes_mnq_alerts.pine` is an indicator that watches MES and MNQ from one
-chart and sends one alert per daily close listing each buy, still-long and exit,
-with what to trade under a chosen plan. `python -m examples.rsi2_combined`
-scores the plans in one $50k account (2020-02 to 2026-09):
+`pine/rsi2_combined_alerts.pine` is an indicator that watches MES and a second
+index micro (MNQ or MYM, an input) from one chart and sends one alert per daily
+close listing each buy, still-long and exit, with what to trade under a chosen
+plan. `python -m examples.rsi2_combined` scores the plans in one $50k account
+(2020-02 to 2026-09):
 
 | Plan | Net $ | Worst day | Pass vs no edge |
 |---|---|---|---|
 | 2 MES only (default) | +17,287 | -1,450 | 39.0% vs 15.3% |
 | 2 MES, else 1 MNQ | +15,677 | -1,450 | 36.5% vs 16.1% |
 | 1 MES + 1 MNQ | +17,760 | -2,392 | 35.1% vs 14.1% |
-| 2 MES + 1 MNQ | +26,403 | -3,107 | 34.4% vs 17.5% |
+| 2 MES, else 3 MYM | +14,172 | -1,825 | 35.5% vs 20.2% |
+| 1 MES + 2 MYM | +15,533 | -1,991 | 35.2% vs 15.9% |
 
-The two are in a trade together on 143 of MES's 206 sessions in a trade, and the
-53 sessions with an MNQ signal alone lost $1,609 per MNQ contract, so adding
-MNQ stacks risk without adding edge; the alert reports MNQ as info only by
+MES is in a trade together with MNQ on 143, and with MYM on 141, of its 206
+sessions in a trade. The sessions with a signal on the second market alone lost
+money ($1,609 per MNQ, $1,038 per MYM contract), so adding either stacks risk
+without adding edge; the alert reports the second market as info only by
 default.
 
 `examples/data/mym_daily.csv` is TradingView `MYM1!`/`MYM2!` daily (micro Dow,

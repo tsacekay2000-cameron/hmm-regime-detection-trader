@@ -1,4 +1,4 @@
-// RSI(2) pullback: one alert for MES and MNQ together (hmm-regime-detection-trader).
+// RSI(2) pullback: one alert for MES plus a second index micro, MNQ or MYM (hmm-regime-detection-trader).
 // Add it to any DAILY chart (MES1! is a good choice) and create one alert with
 // "Any alert() function call". Each daily close it reports every RSI(2) buy, still-long and
 // exit on both symbols, and what to trade under the chosen plan.
@@ -8,23 +8,26 @@
 // Prop version: buy at the 6 PM ET open, sell at the daily close, every session in a trade.
 //
 // Plans, bootstrap pass rate on a $50k evaluation ($3k target, $2k trailing drawdown, 250
-// sessions) vs the same trades with no edge, 2020-2026:
-//   2 MES only (default)   39% vs 15%, worst day -$1,450
-//   2 MES, else 1 MNQ      37% vs 16%, worst day -$1,450 (sessions with MNQ alone lost money)
-//   1 MES + 1 MNQ          35% vs 14%, worst day -$2,392, beyond the $2,000 drawdown
-// The two indexes are in a trade together on most of MES's days in a trade, so adding MNQ stacks
-// risk more than it adds edge. Backtesting research, not financial advice.
+// sessions) vs the same trades with no edge, 2020-2026 (python -m examples.rsi2_combined):
+//                          with MNQ                         with MYM
+//   2 MES only (default)   39% vs 15%, worst day -$1,450    same
+//   2 MES, else second     37% vs 16%, -$1,450 (1 MNQ)      36% vs 20%, -$1,825 (3 MYM)
+//   MES + second together  35% vs 14%, -$2,392 (1 + 1 MNQ)  35% vs 16%, -$1,991 (1 + 2 MYM)
+// MES is in a trade together with MNQ (MYM) on 143 (141) of its 206 sessions in a trade, and the
+// sessions with a second-market signal alone lost money, so adding either stacks risk more than
+// it adds edge. Backtesting research, not financial advice.
 
 //@version=6
-indicator("RSI(2) Pullback: MES + MNQ alerts", shorttitle = "RSI2 MES+MNQ", overlay = false)
+indicator("RSI(2) Pullback: combined alerts", shorttitle = "RSI2 MES+", overlay = false)
 
 PLAN_MES  = "2 MES only (best in backtest)"
-PLAN_PREF = "2 MES, else 1 MNQ"
-PLAN_BOTH = "1 MES + 1 MNQ"
+PLAN_PREF = "2 MES, else the second market"
+PLAN_BOTH = "MES and the second market together"
 plan = input.string(PLAN_MES, "Plan", options = [PLAN_MES, PLAN_PREF, PLAN_BOTH],
-  tooltip = "Which signals to act on. MNQ signals are always reported; under '2 MES only' they are marked info only.")
+  tooltip = "Which signals to act on. Second-market signals are always reported; under '2 MES only' they are marked info only. Sizes: else-plan 1 MNQ or 3 MYM; together 1 MES + 1 MNQ or 1 MES + 2 MYM.")
+second     = input.string("MNQ", "Second market", options = ["MNQ", "MYM"])
 symA       = input.symbol("CME_MINI:MES1!", "S&P 500 micro", group = "Symbols")
-symB       = input.symbol("CME_MINI:MNQ1!", "Nasdaq-100 micro", group = "Symbols")
+symB       = second == "MNQ" ? "CME_MINI:MNQ1!" : "CBOT_MINI:MYM1!"
 rsiLen     = input.int(2, "RSI length", minval = 1, group = "Rules")
 entryLevel = input.float(10, "Buy when RSI is below", minval = 0, maxval = 100, group = "Rules")
 trendLen   = input.int(200, "Trend average (days)", minval = 1, group = "Rules")
@@ -50,6 +53,7 @@ tidB = ticker.modify(symB, backadjustment = backadjustment.on)
 
 // What to trade at the next open under the plan
 qtyA   = plan == PLAN_BOTH ? 1 : 2
+qtyB   = second == "MNQ" ? 1 : plan == PLAN_BOTH ? 2 : 3
 tradeA = hA
 tradeB = plan == PLAN_BOTH ? hB : plan == PLAN_PREF ? hB and not hA : false
 
@@ -66,11 +70,11 @@ statusLine(string name, bool h, bool w, bool trade, int qty, float r) =>
     s
 
 lineA = statusLine("MES", hA, wA, tradeA, qtyA, rA)
-lineB = statusLine("MNQ", hB, wB, tradeB, 1, rB)
+lineB = statusLine(second, hB, wB, tradeB, qtyB, rB)
 
 // ---------- Alert ----------
 if timeframe.isdaily and (lineA != "" or lineB != "")
-    string msg = "RSI(2) MES + MNQ (" + plan + ")"
+    string msg = "RSI(2) MES + " + second + " (" + plan + ")"
     if lineA != ""
         msg += "\n" + lineA
     if lineB != ""
@@ -81,7 +85,7 @@ if timeframe.isdaily and (lineA != "" or lineB != "")
 
 // ---------- Plots ----------
 plot(rA, "MES RSI(2)", color = color.new(color.teal, 0), linewidth = 2)
-plot(rB, "MNQ RSI(2)", color = color.new(color.purple, 0))
+plot(rB, "Second market RSI(2)", color = color.new(color.purple, 0))
 hline(entryLevel, "Buy level", color = color.new(color.gray, 30), linestyle = hline.style_dashed)
 bgcolor(wA ? color.new(color.teal, 85) : wB ? color.new(color.purple, 88) : na, title = "Session in trade")
 
@@ -95,9 +99,9 @@ if barstate.islast
     table.cell(panel, 0, 1, "MES")
     table.cell(panel, 1, 1, str.tostring(rA, "#.0"))
     table.cell(panel, 2, 1, hA ? "LONG " + str.tostring(qtyA) + " MES" : "flat", text_color = hA ? ok : chart.fg_color)
-    table.cell(panel, 0, 2, "MNQ")
+    table.cell(panel, 0, 2, second)
     table.cell(panel, 1, 2, str.tostring(rB, "#.0"))
-    table.cell(panel, 2, 2, hB ? (tradeB ? "LONG 1 MNQ" : "signal, info only") : "flat", text_color = tradeB ? ok : chart.fg_color)
+    table.cell(panel, 2, 2, hB ? (tradeB ? "LONG " + str.tostring(qtyB) + " " + second : "signal, info only") : "flat", text_color = tradeB ? ok : chart.fg_color)
     table.cell(panel, 0, 3, "Chart")
     table.cell(panel, 1, 3, "")
     table.cell(panel, 2, 3, timeframe.isdaily ? "daily: OK" : "switch to a 1D chart", text_color = timeframe.isdaily ? ok : color.red)
