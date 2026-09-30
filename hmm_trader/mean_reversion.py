@@ -62,6 +62,44 @@ def sma(x: np.ndarray, n: int) -> np.ndarray:
     return out
 
 
+def rsi2_levels(close: np.ndarray, n: int = 2, entry: float = 10.0, trend: int = 200,
+                exit_sma: int = 5) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Prices for the NEXT close that trigger the RSI(2) rules, known one bar ahead.
+
+    Returns ``(buy_below, trend_above, exit_above)``; entry ``t`` holds the
+    levels for close ``t + 1`` computed from closes up to ``t``:
+
+    - ``buy_below``: RSI(n) of the next bar is below ``entry`` iff the next
+      close is below this (from the Wilder averages, which move by one step);
+    - ``trend_above``: the next close is above its own ``trend``-day average
+      iff it is above the mean of the last ``trend - 1`` closes;
+    - ``exit_above``: likewise for the ``exit_sma``-day exit average.
+
+    A buy needs trend_above < next close < buy_below. The Pine scripts show
+    the same levels.
+    """
+    close = np.asarray(close, dtype=float)
+    out = np.full((3, close.size), np.nan)
+    if close.size > n:
+        diff = np.diff(close)
+        gain, loss = np.maximum(diff, 0.0), np.maximum(-diff, 0.0)
+        k = entry / (100.0 - entry)  # RSI < entry  <=>  avg gain / avg loss < k
+        g, l_ = gain[:n].mean(), loss[:n].mean()
+        for i in range(n, close.size):
+            if i > n:
+                g = (g * (n - 1) + gain[i - 1]) / n
+                l_ = (l_ * (n - 1) + loss[i - 1]) / n
+            if g / k > l_:  # needs a drop of more than this
+                out[0, i] = close[i] - (n - 1) * (g / k - l_)
+            else:           # can even rise by up to this
+                out[0, i] = close[i] + (n - 1) * (k * l_ - g)
+    for row, m in ((1, trend), (2, exit_sma)):
+        if close.size >= m - 1 and m > 1:
+            c = np.cumsum(np.r_[0.0, close])
+            out[row, m - 2:] = (c[m - 1:] - c[:-(m - 1)]) / (m - 1)
+    return out[0], out[1], out[2]
+
+
 def rsi2_positions(
     close: np.ndarray,
     entry: float = 10.0,

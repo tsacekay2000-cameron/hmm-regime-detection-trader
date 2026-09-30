@@ -230,6 +230,97 @@ lengths (so the long bias of a rising market does not count as skill), a
 next-open entry variant, an entry x exit sensitivity grid, the fade in R by
 period and before costs, and prop pass rates against a zero-edge baseline.
 
+## RSI(2) pullback for TradingView (`pine/rsi2_pullback.pine`)
+
+A Pine Script v6 strategy of the RSI(2) pullback from the mean-reversion study:
+long when RSI(2) closes below 10 above the 200-day average, out on the first
+close above the 5-day average. Its default mode is the prop version (buy at each
+6 PM ET session open, sell at the daily close, so never in a position through
+the daily break), 2 contracts, $0.62 commission and 1 tick of slippage per side.
+"Hold overnight" mode keeps one position from the next open to the exit close.
+
+To use it: open a daily `MES1!`, `MNQ1!`, `M2K1!`, `MYM1!`, `MGC1!` or `MCL1!` chart with back-adjustment on (`B-ADJ`),
+add the script from the Pine Editor, and read the Strategy Tester. The size
+follows the chart's symbol unless set: 2 MES, 1 MNQ, 3 M2K, 3 MYM, 1 MGC or 1 MCL, the
+sizes tested for a $50k evaluation (the MYM, MNQ and M2K edges are weaker:
+timing p = 0.06, 0.16 and 0.08 against 0.003 on MES; 3 MYM passed 32% of
+evaluations against 18% with no edge). On gold the rule showed no edge (p = 0.43; 1 MGC
+passed 7.6% of evaluations against 7.0% with no edge), and on crude (from
+2022) prop mode lost money (p = 0.41) and passed almost no evaluations. Gold's
+and crude's daily closes are their 1:30 and 2:30 PM ET settlements, so prop
+mode on them sells then.
+Its status panel lists the closing prices that would trigger a buy or an exit
+at the next close (`mean_reversion.rsi2_levels` computes the same levels). It
+plots the trend average, shades the sessions in a trade, shows a status panel
+(RSI, trend filter, what to do at the next open, size, backtest evidence) and
+sends alerts at the daily close, naming the symbol and size, when an alert is
+created with "alert() function calls only". Alerts are per chart, so create one
+on each of `MES1!`, `MNQ1!`, `M2K1!`, `MYM1!`, `MGC1!` and `MCL1!`.
+
+`python -m examples.rsi2_trade_list` writes the Python backtest's trades to
+`pine/rsi2_<symbol>_reference_trades.csv`, to compare with TradingView's List of
+trades (2020-02 to 2026-09; MCL from 2022-04). Prop-mode totals per contract:
+
+| Symbol | Trades | Prop P&L |
+|---|---|---|
+| MES | 60 | +$8,643 |
+| MNQ | 55 | +$9,116 |
+| M2K | 51 | +$2,515 |
+| MYM | 60 | +$3,445 |
+| MGC | 37 | +$748 |
+| MCL | 20 | -$981 |
+
+The strategy lists each session as its own trade, and small differences are
+expected where TradingView's back-adjusted prices put RSI or an average right at
+a threshold.
+
+`pine/rsi2_combined_alerts.pine` is an indicator that watches MES and a second
+index micro (MNQ or MYM, an input) from one chart and sends one alert per daily
+close listing each buy, still-long and exit, with what to trade under a chosen
+plan. `python -m examples.rsi2_combined` scores the plans in one $50k account
+(2020-02 to 2026-09):
+
+| Plan | Net $ | Worst day | Pass vs no edge |
+|---|---|---|---|
+| 2 MES only (default) | +17,287 | -1,450 | 39.0% vs 15.3% |
+| 2 MES, else 1 MNQ | +15,677 | -1,450 | 36.5% vs 16.1% |
+| 1 MES + 1 MNQ | +17,760 | -2,392 | 35.1% vs 14.1% |
+| 2 MES, else 3 MYM | +14,172 | -1,825 | 35.5% vs 20.2% |
+| 1 MES + 2 MYM | +15,533 | -1,991 | 35.2% vs 15.9% |
+
+MES is in a trade together with MNQ on 143, and with MYM on 141, of its 206
+sessions in a trade. The sessions with a signal on the second market alone lost
+money ($1,609 per MNQ, $1,038 per MYM contract), so adding either stacks risk
+without adding edge; the alert reports the second market as info only by
+default.
+
+`examples/data/mym_daily.csv` is TradingView `MYM1!`/`MYM2!` daily (micro Dow,
+2019-05 to 2026-09), which rolls on the MES/MNQ schedule.
+
+## Buy & hold as a prop evaluation (`examples/buy_and_hold.py`, `pine/buy_and_hold.pine`)
+
+`python -m examples.buy_and_hold` compares buy & hold 1 MES (held, or flat
+through every daily break) with RSI(2) on 2 MES (held overnight, or flat through
+every break) from 2020-02-25, after costs:
+
+| | Net $ | Max DD | Every start | Bootstrap | No edge |
+|---|---|---|---|---|---|
+| Buy & hold, 1 MES | +18,368 | 6,067 | 39.9% | 38.9% | 22.3% |
+| Buy & hold, 1 MES, flat each break | +12,354 | 7,138 | 29.2% | 32.3% | 21.7% |
+| RSI(2), 2 MES, held overnight | +19,339 | 3,092 | 57.3% | 46.5% | 14.1% |
+| RSI(2), 2 MES, flat each break | +17,287 | 3,876 | 41.4% | 39.0% | 15.3% |
+
+Buy & hold makes money because the S&P rose, but its drawdown is three times the
+$2,000 limit: its pass rate by start year runs from 93% (2020, near the pandemic
+low) to 15% (2024) and 19% (2022, when it lost $4,737 per contract). It also
+prints net profit by calendar year.
+
+`pine/buy_and_hold.pine` is the TradingView version (hold or prop mode, same
+costs) with an evaluation check: from a start date it replays one $50k
+evaluation on the chart ($3,000 target, $2,000 end-of-day trailing drawdown,
+250 sessions) and marks the pass or failure. Its header lists the backtest's
+outcomes for several start dates to compare against.
+
 ## Trend following on MES (`examples/mes_trend.py`)
 
 `hmm_trader/trend.py` has three textbook rules on roll-adjusted daily closes,

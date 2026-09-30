@@ -1,0 +1,147 @@
+// RSI(2) pullback: one alert for MES plus a second index micro, MNQ or MYM (hmm-regime-detection-trader).
+// Add it to any DAILY chart (MES1! is a good choice) and create one alert with
+// "Any alert() function call". Each daily close it reports every RSI(2) buy, still-long and
+// exit on both symbols, and what to trade under the chosen plan.
+//
+// Same rules as pine/rsi2_pullback.pine, on back-adjusted daily closes: long after a close with
+// RSI(2) < 10 above the 200-day average, out on the first close above the 5-day average.
+// Prop version: buy at the 6 PM ET open, sell at the daily close, every session in a trade.
+//
+// Plans, bootstrap pass rate on a $50k evaluation ($3k target, $2k trailing drawdown, 250
+// sessions) vs the same trades with no edge, 2020-2026 (python -m examples.rsi2_combined):
+//                          with MNQ                         with MYM
+//   2 MES only (default)   39% vs 15%, worst day -$1,450    same
+//   2 MES, else second     37% vs 16%, -$1,450 (1 MNQ)      36% vs 20%, -$1,825 (3 MYM)
+//   MES + second together  35% vs 14%, -$2,392 (1 + 1 MNQ)  35% vs 16%, -$1,991 (1 + 2 MYM)
+// MES is in a trade together with MNQ (MYM) on 143 (141) of its 206 sessions in a trade, and the
+// sessions with a second-market signal alone lost money, so adding either stacks risk more than
+// it adds edge. Backtesting research, not financial advice.
+
+//@version=6
+indicator("RSI(2) Pullback: combined alerts", shorttitle = "RSI2 MES+", overlay = false)
+
+PLAN_MES  = "2 MES only (best in backtest)"
+PLAN_PREF = "2 MES, else the second market"
+PLAN_BOTH = "MES and the second market together"
+plan = input.string(PLAN_MES, "Plan", options = [PLAN_MES, PLAN_PREF, PLAN_BOTH],
+  tooltip = "Which signals to act on. Second-market signals are always reported; under '2 MES only' they are marked info only. Sizes: else-plan 1 MNQ or 3 MYM; together 1 MES + 1 MNQ or 1 MES + 2 MYM.")
+second     = input.string("MNQ", "Second market", options = ["MNQ", "MYM"])
+symA       = input.symbol("CME_MINI:MES1!", "S&P 500 micro", group = "Symbols")
+symB       = second == "MNQ" ? "CME_MINI:MNQ1!" : "CBOT_MINI:MYM1!"
+rsiLen     = input.int(2, "RSI length", minval = 1, group = "Rules")
+entryLevel = input.float(10, "Buy when RSI is below", minval = 0, maxval = 100, group = "Rules")
+trendLen   = input.int(200, "Trend average (days)", minval = 2, group = "Rules")
+exitLen    = input.int(5, "Exit average (days)", minval = 2, group = "Rules")
+
+// Closing prices that trigger the rules, worked out one bar ahead (same formulas as
+// hmm_trader.mean_reversion.rsi2_levels): a next close below buyBelow puts RSI under the entry
+// level; the next close is above its own N-day average iff above the mean of the last N-1 closes.
+rsiBuyBelow(float src, int n, float level) =>
+    float up = ta.rma(math.max(src - src[1], 0), n)
+    float dn = ta.rma(math.max(src[1] - src, 0), n)
+    float k  = level / (100 - level)
+    float px = na
+    if not na(up) and not na(dn)
+        px := up / k > dn ? src - (n - 1) * (up / k - dn) : src + (n - 1) * (k * dn - up)
+    px
+
+// [long for the next session, long for this session, RSI, levels for THIS bar's close
+//  (buy below, trend above, exit above), exit level for the NEXT close], decided at each close
+rsi2State() =>
+    r  = ta.rsi(close, rsiLen)
+    ex = ta.sma(close, exitLen)
+    tm = ta.sma(close, trendLen)
+    var bool held = false
+    bool was = held
+    if was
+        held := not (close > ex)
+    else
+        held := not na(r) and not na(tm) and r < entryLevel and close > tm
+    bb = rsiBuyBelow(close, rsiLen, entryLevel)
+    tf = math.sum(close, trendLen - 1) / (trendLen - 1)
+    xa = math.sum(close, exitLen - 1) / (exitLen - 1)
+    [held, was, r, bb[1], tf[1], xa[1], xa]
+
+tidA = ticker.modify(symA, backadjustment = backadjustment.on)
+tidB = ticker.modify(symB, backadjustment = backadjustment.on)
+[hA, wA, rA, bbA, tfA, xaA, xnA] = request.security(tidA, "D", rsi2State())
+[hB, wB, rB, bbB, tfB, xaB, xnB] = request.security(tidB, "D", rsi2State())
+
+// What to trade at the next open under the plan
+qtyA   = plan == PLAN_BOTH ? 1 : 2
+qtyB   = second == "MNQ" ? 1 : plan == PLAN_BOTH ? 2 : 3
+tradeA = hA
+tradeB = plan == PLAN_BOTH ? hB : plan == PLAN_PREF ? hB and not hA : false
+
+statusLine(string name, bool h, bool w, bool trade, int qty, float r, float px, float exitNext) =>
+    string s = ""
+    if h and not w
+        s := name + " BUY signal, RSI " + str.tostring(r, "#.0") + ", close " + str.tostring(px, "#.00")
+    else if h
+        s := name + " still long"
+    else if w
+        s := name + " EXIT: closed at " + str.tostring(px, "#.00") + ", above the 5-day average, do not re-enter"
+    if h
+        s += (trade ? ": buy " + str.tostring(qty) + " " + name + " at the 6 PM ET open" : ": no trade under your plan (info only)") + ", exit signal on a close above " + str.tostring(exitNext, "#.00")
+    s
+
+cA = request.security(tidA, "D", close)
+cB = request.security(tidB, "D", close)
+lineA = statusLine("MES", hA, wA, tradeA, qtyA, rA, cA, xnA)
+lineB = statusLine(second, hB, wB, tradeB, qtyB, rB, cB, xnB)
+
+// ---------- Alert ----------
+if timeframe.isdaily and (lineA != "" or lineB != "")
+    string msg = "RSI(2) MES + " + second + " (" + plan + ")"
+    if lineA != ""
+        msg += "\n" + lineA
+    if lineB != ""
+        msg += "\n" + lineB
+    if hA or hB
+        msg += "\nSell every open position before the daily break."
+    alert(msg, alert.freq_once_per_bar_close)
+
+// ---------- Plots ----------
+plot(rA, "MES RSI(2)", color = color.new(color.teal, 0), linewidth = 2)
+plot(rB, "Second market RSI(2)", color = color.new(color.purple, 0))
+hline(entryLevel, "Buy level", color = color.new(color.gray, 30), linestyle = hline.style_dashed)
+bgcolor(wA ? color.new(color.teal, 85) : wB ? color.new(color.purple, 88) : na, title = "Session in trade")
+
+// ---------- Status panel ----------
+// Panel colors: a solid dark panel with light text, readable on light and dark chart themes
+PANEL_BG   = #1E222D
+PANEL_TEXT = #F0F3FA
+PANEL_OK   = #3DDC97
+PANEL_BAD  = #FF6B6B
+var table panel = table.new(position.top_right, 5, 4, bgcolor = PANEL_BG, frame_color = #434651, frame_width = 1, border_color = #2A2E39, border_width = 1)
+levelTxt(bool inTrade, float bb, float tf, float xa, bool isBuy) =>
+    string t = "-"
+    if isBuy and not inTrade and not na(bb)
+        t := na(tf) or bb > tf ? "below " + str.tostring(bb, "#.00") + (na(tf) ? "" : " (above " + str.tostring(tf, "#.00") + ")") : "not possible (trend)"
+    if not isBuy and inTrade and not na(xa)
+        t := "above " + str.tostring(xa, "#.00")
+    t
+
+// levels for the close of the latest bar (today's close while the session is open)
+if barstate.islast
+    color ok = PANEL_OK
+    table.cell(panel, 0, 0, "", text_color = PANEL_TEXT)
+    table.cell(panel, 1, 0, "RSI(2)", text_color = PANEL_TEXT)
+    table.cell(panel, 2, 0, "Buy signal if close is", text_color = PANEL_TEXT)
+    table.cell(panel, 3, 0, "Exit signal if close is", text_color = PANEL_TEXT)
+    table.cell(panel, 4, 0, "Next session", text_color = PANEL_TEXT)
+    table.cell(panel, 0, 1, "MES", text_color = PANEL_TEXT)
+    table.cell(panel, 1, 1, str.tostring(rA, "#.0"), text_color = PANEL_TEXT)
+    table.cell(panel, 2, 1, levelTxt(wA, bbA, tfA, xaA, true), text_color = ok)
+    table.cell(panel, 3, 1, levelTxt(wA, bbA, tfA, xaA, false), text_color = color.new(#FF9F43, 0))
+    table.cell(panel, 4, 1, hA ? "LONG " + str.tostring(qtyA) + " MES" : "flat", text_color = hA ? ok : PANEL_TEXT)
+    table.cell(panel, 0, 2, second, text_color = PANEL_TEXT)
+    table.cell(panel, 1, 2, str.tostring(rB, "#.0"), text_color = PANEL_TEXT)
+    table.cell(panel, 2, 2, levelTxt(wB, bbB, tfB, xaB, true), text_color = ok)
+    table.cell(panel, 3, 2, levelTxt(wB, bbB, tfB, xaB, false), text_color = color.new(#FF9F43, 0))
+    table.cell(panel, 4, 2, hB ? (tradeB ? "LONG " + str.tostring(qtyB) + " " + second : "signal, info only") : "flat", text_color = tradeB ? ok : PANEL_TEXT)
+    table.cell(panel, 0, 3, "Chart", text_color = PANEL_TEXT)
+    table.cell(panel, 1, 3, "", text_color = PANEL_TEXT)
+    table.cell(panel, 2, 3, "", text_color = PANEL_TEXT)
+    table.cell(panel, 3, 3, "", text_color = PANEL_TEXT)
+    table.cell(panel, 4, 3, timeframe.isdaily ? "daily: OK" : "switch to a 1D chart", text_color = timeframe.isdaily ? ok : PANEL_BAD)
