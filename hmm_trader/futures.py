@@ -35,6 +35,8 @@ CONTRACTS = {
     "MNQ": ContractSpec("MNQ", multiplier=2.0, tick=0.25),   # Micro E-mini Nasdaq-100
     "M2K": ContractSpec("M2K", multiplier=5.0, tick=0.10),   # Micro E-mini Russell 2000
     "MYM": ContractSpec("MYM", multiplier=0.5, tick=1.0),    # Micro E-mini Dow
+    "MGC": ContractSpec("MGC", multiplier=10.0, tick=0.10),  # Micro Gold, $10/oz
+    "MCL": ContractSpec("MCL", multiplier=100.0, tick=0.01),  # Micro WTI Crude, $100/bbl
 }
 
 

@@ -1,9 +1,10 @@
-"""Opening range breakout on MES / MNQ 5-minute bars, scored as a prop firm evaluation.
+"""Opening range breakout on micro futures 5-minute bars, scored as a prop firm evaluation.
 
-Run from the repo root (bundled data: regular-session 5-min bars of the front
-contract, 2024-10-01 to 2026-09-29):
+Run from the repo root (bundled data: 5-min bars of the front contract for MES,
+MNQ, MGC and MCL, 2024-10-01 to 2026-09-28; session times in ``SESSIONS``):
 
-    python -m examples.orb_backtest
+    python -m examples.orb_backtest                        # MES and MNQ
+    python -m examples.orb_backtest --symbols MGC,MCL
     python -m examples.orb_backtest --symbols MNQ --risk 100,200 --split 2025-07-01
 
 1. Runs a grid of opening-range lengths (5/15/30 min) and exits (1R, 2R, hold
@@ -39,6 +40,21 @@ from hmm_trader import prop_firm as pf
 
 DATA_DIR = Path(__file__).parent / "data"
 GRID = [(r, t) for r in (5, 15, 30) for t in (1.0, 2.0, None)]
+
+
+# (opening range start, flatten time), minutes after midnight ET: the regular
+# session for index futures, the traditional pit open to settlement for metals
+# and energy
+SESSIONS = {
+    "MES": (9 * 60 + 30, 15 * 60 + 55),
+    "MNQ": (9 * 60 + 30, 15 * 60 + 55),
+    "MGC": (8 * 60 + 20, 13 * 60 + 30),
+    "MCL": (9 * 60, 14 * 60 + 30),
+}
+
+
+def hhmm(minutes: int) -> str:
+    return f"{minutes // 60:02d}:{minutes % 60:02d}"
 
 
 def load(symbol: str) -> orb.IntradayBars:
@@ -81,10 +97,13 @@ def challenge_row(label: str, res: pf.ChallengeResult) -> str:
 def run_symbol(symbol: str, args, rules: pf.ChallengeRules) -> None:
     spec = fu.CONTRACTS[symbol]
     bars = load(symbol)
+    session_open, flatten = SESSIONS[symbol]
     base = dict(risk_dollars=args.grid_risk, slippage_ticks=args.slippage_ticks,
-                commission_per_side=args.commission)
+                commission_per_side=args.commission, session_open=session_open,
+                flatten=flatten)
     print(f"\n######## {symbol}: {bars.date[0]} .. {bars.date[-1]}, "
-          f"{np.unique(bars.date).size} sessions, ${args.grid_risk:,.0f} risk per trade ########")
+          f"{np.unique(bars.date).size} sessions, range from {hhmm(session_open)} ET, flat by "
+          f"{hhmm(flatten)}, ${args.grid_risk:,.0f} risk per trade ########")
     print(f"  {'':<18}{'trades':>7}{'win':>7}{'avg R':>8}{'net $':>10}{'max DD':>9}"
           f"{'PF':>6}{'Sharpe':>7}{'< ' + args.split:>10}{'>= ' + args.split:>10}")
     results = {}
@@ -171,7 +190,7 @@ def main(argv: Optional[list[str]] = None) -> None:
 
     symbols = [s.strip().upper() for s in args.symbols.split(",")]
     for s in symbols:
-        if s not in fu.CONTRACTS or not (DATA_DIR / f"{s.lower()}_5min_rth.csv.gz").exists():
+        if s not in SESSIONS or not (DATA_DIR / f"{s.lower()}_5min_rth.csv.gz").exists():
             ap.error(f"no bundled 5-min data for {s}")
     a = args.account
     prop = pf.ChallengeRules(
