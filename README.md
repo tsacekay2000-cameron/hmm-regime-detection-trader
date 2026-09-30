@@ -210,6 +210,7 @@ python -m examples.mes_mean_reversion                 # both parts
 python -m examples.mes_mean_reversion --part a --horizon 250
 python -m examples.mes_mean_reversion --part a --symbols MES,MNQ,M2K
 python -m examples.mes_mean_reversion --part c --symbols MES,MNQ,M2K   # flat through breaks
+python -m examples.mes_mean_reversion --part c --contracts 1,2,3,4,5,6,8 --horizon 250
 ```
 
 Part C re-runs the RSI(2) signals for prop firms that require being flat through

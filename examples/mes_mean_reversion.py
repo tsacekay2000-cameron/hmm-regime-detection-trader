@@ -160,7 +160,7 @@ def part_a(args, rng: np.random.Generator, symbol: str = "MES") -> None:
 
     print(f"\n  Prop evaluation (holds overnight), {args.horizon} sessions max:")
     print(f"  {'':<34}{'pass':>7}{'max DD':>8}{'daily':>8}{'timeout':>9}{'days':>7}")
-    for n in (1, 2, 3):
+    for n in args.contracts:
         prop_rows(f"{n} {symbol}", steps[sl] * n, held[sl], args, rng)
 
 
@@ -234,7 +234,7 @@ def part_c(args, rng: np.random.Generator, symbol: str) -> None:
 
     print(f"\n  Prop evaluation, V1 (flat through every break), {args.horizon} sessions max:")
     print(f"  {'':<34}{'pass':>7}{'max DD':>8}{'daily':>8}{'timeout':>9}{'days':>7}")
-    for n in (1, 2, 3):
+    for n in args.contracts:
         prop_rows(f"{n} {symbol}", flat[sl] * n, held[sl], args, rng)
 
 
@@ -280,6 +280,9 @@ def main(argv: Optional[list[str]] = None) -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--part", choices=("a", "b", "c", "both", "all"), default="both",
                     help="both = A and B; all = A, B and C")
+    ap.add_argument("--contracts", default="1,2,3",
+                    type=lambda t: [int(x) for x in t.split(",") if int(x) > 0],
+                    help="contract counts for the prop evaluations in parts A and C")
     ap.add_argument("--symbols", default="MES",
                     help="part A symbols with bundled daily data, e.g. MES,MNQ,M2K")
     ap.add_argument("--split", default="2025-10-01", help="period split for part B")
