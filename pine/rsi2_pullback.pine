@@ -1,5 +1,6 @@
 // RSI(2) pullback, as tested in hmm-regime-detection-trader (examples/mes_mean_reversion.py).
-// Use on a DAILY chart of MES1! with back-adjustment on ("B-ADJ" / "Adjust for contract changes").
+// Use on a DAILY chart of MES1! or MNQ1! with back-adjustment on ("B-ADJ" / "Adjust for contract changes").
+// Add it to each chart you want alerts for; the size and alert text follow the chart's symbol.
 //
 // Rules (Connors, fixed in advance, nothing tuned):
 //   - At the daily close, if RSI(2) < 10 and the close is above its 200-day average, go long.
@@ -9,13 +10,15 @@
 //   - "Prop: flat through each daily break" (default): on each session the rule is long,
 //     buy at the session open (6 PM ET) and sell at the daily close, so there is never a
 //     position through the 5-6 PM ET break. This is the version that passed ~40% of
-//     simulated $50k evaluations at 2 MES (vs ~15% for the same trades with no edge).
+//     simulated $50k evaluations at 2 MES (vs ~15% for the same trades with no edge), and
+//     ~20% at 1 MNQ (vs ~8%), where the timing edge is weaker (p = 0.16 vs 0.003 on MES).
 //     Each session shows as its own trade in the Strategy Tester.
 //   - "Hold overnight": buy at the next session open after the signal, sell at the close
 //     of the exit day.
 //
 // Costs: $0.62 commission per contract per side plus 1 tick of slippage, as in the Python
-// backtest. Reference trades: pine/rsi2_mes_reference_trades.csv (python -m examples.rsi2_trade_list).
+// backtest. Reference trades: pine/rsi2_mes_reference_trades.csv and rsi2_mnq_reference_trades.csv
+// (python -m examples.rsi2_trade_list).
 // Backtesting research, not financial advice.
 
 //@version=6
@@ -35,10 +38,16 @@ entryLevel = input.float(10, "Buy when RSI is below", minval = 0, maxval = 100, 
 useTrend   = input.bool(true, "Only buy above the trend average", group = "Rules")
 trendLen   = input.int(200, "Trend average (days)", minval = 1, group = "Rules")
 exitLen    = input.int(5, "Exit average (days)", minval = 1, group = "Rules")
+qtyIn      = input.int(0, "Contracts (0 = tested size)", minval = 0,
+  tooltip = "0 uses the size tested for a $50k evaluation with a $2,000 trailing drawdown: 2 MES, 1 MNQ, 3 M2K (2 on anything else).")
 startTime  = input.time(timestamp("2019-01-01T00:00:00"), "Take signals from", group = "Backtest")
 showPanel  = input.bool(true, "Show status panel", group = "Display")
 
 isProp = mode == MODE_PROP
+root   = syminfo.root
+qty    = qtyIn > 0 ? qtyIn : root == "MNQ" ? 1 : root == "M2K" ? 3 : 2
+sizeTxt = str.tostring(qty) + " " + root
+evidence = root == "MES" ? "strong (p = 0.003)" : root == "MNQ" ? "weaker (p = 0.16)" : root == "M2K" ? "weak (p = 0.08)" : "not tested"
 
 // ---------- Signal ----------
 r       = ta.rsi(close, rsiLen)
@@ -64,12 +73,12 @@ if isProp
     if strategy.position_size > 0
         strategy.close_all(comment = "Session close", immediately = true)
     if held
-        strategy.entry("Long", strategy.long, comment = newSignal ? "Buy" : "Re-buy")
+        strategy.entry("Long", strategy.long, qty = qty, comment = newSignal ? "Buy" : "Re-buy")
 else
     if strategy.position_size > 0 and not held
         strategy.close("Long", comment = "Exit", immediately = true)
     if held and strategy.position_size == 0
-        strategy.entry("Long", strategy.long, comment = "Buy")
+        strategy.entry("Long", strategy.long, qty = qty, comment = "Buy")
 
 // ---------- Plots ----------
 plot(useTrend ? trendMa : na, "Trend average", color = color.new(color.gray, 0), linewidth = 2)
@@ -79,7 +88,7 @@ plotshape(newSignal, "Buy signal", shape.triangleup, location.belowbar, color.te
 plotshape(exitSignal, "Exit signal", shape.xcross, location.abovebar, color.orange, size = size.tiny)
 
 // ---------- Status panel ----------
-var table panel = table.new(position.top_right, 2, 5, bgcolor = color.new(color.gray, 85), border_width = 1)
+var table panel = table.new(position.top_right, 2, 7, bgcolor = color.new(color.gray, 85), border_width = 1)
 if showPanel and barstate.islast
     color ok  = color.new(color.teal, 0)
     color bad = color.new(color.red, 0)
@@ -92,14 +101,18 @@ if showPanel and barstate.islast
     table.cell(panel, 1, 2, nextTxt, text_color = held ? ok : chart.fg_color)
     table.cell(panel, 0, 3, "Exit on a close above", text_halign = text.align_left)
     table.cell(panel, 1, 3, held ? str.tostring(exitMa, format.mintick) + " (5-day avg, moves daily)" : "-")
-    table.cell(panel, 0, 4, "Chart", text_halign = text.align_left)
-    table.cell(panel, 1, 4, timeframe.isdaily ? "daily: OK" : "switch to a 1D chart", text_color = timeframe.isdaily ? ok : bad)
+    table.cell(panel, 0, 4, "Size", text_halign = text.align_left)
+    table.cell(panel, 1, 4, sizeTxt)
+    table.cell(panel, 0, 5, "Backtest evidence", text_halign = text.align_left)
+    table.cell(panel, 1, 5, evidence, text_color = root == "MES" ? ok : chart.fg_color)
+    table.cell(panel, 0, 6, "Chart", text_halign = text.align_left)
+    table.cell(panel, 1, 6, timeframe.isdaily ? "daily: OK" : "switch to a 1D chart", text_color = timeframe.isdaily ? ok : bad)
 
 // ---------- Alerts ----------
 // Create an alert on this strategy with "alert() function calls only"; each fires once, at the daily close.
 if newSignal
-    alert("RSI(2) BUY " + syminfo.ticker + ": RSI " + str.tostring(r, "#.0") + ", above the trend average. Buy at the next session open (6 PM ET).", alert.freq_once_per_bar_close)
+    alert("RSI(2) BUY " + syminfo.ticker + ": RSI " + str.tostring(r, "#.0") + ", above the trend average. Buy " + sizeTxt + " at the next session open (6 PM ET).", alert.freq_once_per_bar_close)
 else if held and isProp
-    alert("RSI(2) STILL LONG " + syminfo.ticker + ": buy again at the 6 PM ET open and sell before the daily break.", alert.freq_once_per_bar_close)
+    alert("RSI(2) STILL LONG " + syminfo.ticker + ": buy " + sizeTxt + " again at the 6 PM ET open and sell before the daily break.", alert.freq_once_per_bar_close)
 if exitSignal
-    alert("RSI(2) EXIT " + syminfo.ticker + ": closed above the 5-day average. " + (isProp ? "Do not re-enter at the open." : "Sell."), alert.freq_once_per_bar_close)
+    alert("RSI(2) EXIT " + syminfo.ticker + ": closed above the 5-day average. " + (isProp ? "Do not re-enter at the open." : "Sell " + sizeTxt + "."), alert.freq_once_per_bar_close)

@@ -239,18 +239,22 @@ close above the 5-day average. Its default mode is the prop version (buy at each
 the daily break), 2 contracts, $0.62 commission and 1 tick of slippage per side.
 "Hold overnight" mode keeps one position from the next open to the exit close.
 
-To use it: open a daily `MES1!` chart with back-adjustment on (`B-ADJ`), add the
-script from the Pine Editor, and read the Strategy Tester. It plots the two
-averages, shades the sessions in a trade, shows a status panel (RSI, trend
-filter, what to do at the next open) and sends alerts at the daily close when
-an alert is created with "alert() function calls only".
+To use it: open a daily `MES1!` or `MNQ1!` chart with back-adjustment on (`B-ADJ`),
+add the script from the Pine Editor, and read the Strategy Tester. The size
+follows the chart's symbol unless set: 2 MES or 1 MNQ, the sizes tested for a
+$50k evaluation (the MNQ edge is weaker: timing p = 0.16 against 0.003 on MES).
+It plots the two averages, shades the sessions in a trade, shows a status panel
+(RSI, trend filter, what to do at the next open, size, backtest evidence) and
+sends alerts at the daily close, naming the symbol and size, when an alert is
+created with "alert() function calls only". Alerts are per chart, so create one
+on each of `MES1!` and `MNQ1!`.
 
 `python -m examples.rsi2_trade_list` writes the Python backtest's trades to
-`pine/rsi2_mes_reference_trades.csv` (60 trades from 2020-02 to 2026-09, +$8,643
-per contract in prop mode) to compare with TradingView's List of trades. The
-strategy lists each session as its own trade, and small differences are expected
-where TradingView's back-adjusted prices put RSI or an average right at a
-threshold.
+`pine/rsi2_mes_reference_trades.csv` (60 trades, +$8,643 per contract in prop
+mode) and `pine/rsi2_mnq_reference_trades.csv` (55 trades, +$9,116), 2020-02 to
+2026-09, to compare with TradingView's List of trades. The strategy lists each
+session as its own trade, and small differences are expected where
+TradingView's back-adjusted prices put RSI or an average right at a threshold.
 
 ## Trend following on MES (`examples/mes_trend.py`)
 
