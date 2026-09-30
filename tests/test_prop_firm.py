@@ -154,3 +154,20 @@ def test_simulate_validation():
 @pytest.fixture
 def returns_paths():
     return np.random.default_rng(3).normal(0.001, 0.01, size=(500, 100))
+
+
+def test_non_compounding_adds_pnl_fractions():
+    # +5% then +5% of the initial balance = +10%: passes without compounding
+    res = pf.simulate_challenge(np.array([[0.05, 0.05]]), pf.ChallengeRules(),
+                                compounding=False)
+    assert res.outcomes[0] == pf.PASSED
+    assert res.final_equity[0] == pytest.approx(1.10)
+    # losses add up too: -6% then -4.5% breaches the 10% static floor exactly past it
+    res = pf.simulate_challenge(np.array([[-0.06, -0.045]]),
+                                pf.ChallengeRules(daily_loss_limit=None), compounding=False)
+    assert res.outcomes[0] == pf.FAILED_DRAWDOWN
+    # leverage scales the P&L linearly
+    res = pf.simulate_challenge(np.array([[0.03, 0.03]]), pf.ChallengeRules(),
+                                leverage=2.0, compounding=False)
+    assert res.final_equity[0] == pytest.approx(1.12)  # +6% a day, passes on day 2
+    assert res.days[0] == 2

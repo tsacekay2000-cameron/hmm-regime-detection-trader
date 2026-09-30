@@ -119,3 +119,33 @@ breaches are only seen on the daily close, which understates failures; pass
 
 Demo comparing buy & hold and the regime filter across leverage under a static
 and a trailing drawdown rule set: `python -m examples.prop_firm_demo`
+
+## Micro futures backtest (`examples/micro_futures_backtest.py`)
+
+Walk-forward test of the HMM regime filter on micro E-mini futures (MES, MNQ),
+scored in dollars per contract and against a $50k futures prop evaluation
+(default: $3,000 target, $2,000 end-of-day trailing drawdown that stops at the
+starting balance; override with `--target`, `--max-dd`, `--dd-type`,
+`--daily-loss`, ...).
+
+```bash
+python -m examples.micro_futures_backtest                       # MES + MNQ, 1/2/3/5 contracts
+python -m examples.micro_futures_backtest --symbols MNQ --contracts 1,2 --overnight
+```
+
+- **Rolls** (`hmm_trader/futures.py`): continuous front-month series jump by the
+  calendar spread at each quarterly roll (about +1% for index futures since
+  2022), which an unadjusted backtest books as profit. The bundled data carries
+  the second-month close, so roll-day P&L is measured from the contract actually
+  rolled into. The roll calendar (3 sessions before the 3rd-Friday expiry)
+  was checked against the cash index.
+- **Sessions**: by default positions open at the session open and close at the
+  settlement, flat through the daily break as futures prop firms require;
+  `--overnight` holds between sessions. Costs: $0.62 commission plus 1 tick of
+  slippage per side.
+- **Intraday risk**: sessions are replayed as open -> high -> low -> close, the
+  worst ordering for a long, so drawdown breaches are counted conservatively.
+
+Bundled data: `examples/data/{mes,mnq}_daily.csv`, TradingView `CME_MINI:MES1!`
+/ `MNQ1!` daily bars from 2019-05-06 to 2026-09-29 dated by trade date, with the
+`2!` close as `next_close`.
