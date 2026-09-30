@@ -97,3 +97,41 @@ def test_m2k_rolls_one_session_later():
     # Wednesday of expiry week; Tuesday when Juneteenth falls in it (checked vs RUT)
     for d in ("2024-12-18", "2025-06-17", "2026-06-16", "2026-09-16"):
         assert d in b.dates[mask]
+
+
+def test_gold_roll_mask_and_dispatch():
+    b = fu.load_bars(fu.Path(__file__).parents[1] / "examples" / "data" / "mgc_daily.csv")
+    spec = fu.CONTRACTS["MGC"]
+    mask = fu.roll_mask(b.dates, spec)
+    # matched against individual MGC contracts (Massive, 2024-2026)
+    for d in ("2024-11-27", "2025-01-30", "2025-03-28", "2025-05-29", "2025-07-30",
+              "2025-11-26", "2026-01-29", "2026-05-28", "2026-07-30"):
+        assert d in b.dates[mask]
+    assert {d[5:7] for d in b.dates[mask]} == {"01", "03", "05", "07", "11"}
+    # second-to-last session of the month; an unfinished last month is skipped
+    dates = ["2025-01-28", "2025-01-29", "2025-01-30", "2025-01-31", "2025-02-03",
+             "2025-03-27", "2025-03-28"]
+    assert list(np.flatnonzero(fu.gold_roll_mask(dates))) == [2]
+    np.testing.assert_array_equal(fu.roll_mask(b.dates, fu.CONTRACTS["MES"]),
+                                  fu.quarterly_roll_mask(b.dates, 3))
+    with pytest.raises(ValueError):
+        fu.roll_mask(b.dates, fu.ContractSpec("X", 1.0, 1.0, roll_rule="weekly"))
+
+
+def test_crude_roll_mask_and_holidays():
+    b = fu.load_bars(fu.Path(__file__).parents[1] / "examples" / "data" / "mcl_daily.csv")
+    mask = fu.roll_mask(b.dates, fu.CONTRACTS["MCL"])
+    # matched against individual MCL contracts (Massive, 2024-10 .. 2026-09)
+    observed = ["2024-10-18", "2024-11-18", "2024-12-17", "2025-01-16", "2025-02-19",
+                "2025-03-18", "2025-04-17", "2025-05-16", "2025-06-17", "2025-07-18",
+                "2025-08-18", "2025-09-18", "2025-10-17", "2025-11-18", "2025-12-17",
+                "2026-01-15", "2026-02-19", "2026-03-18", "2026-04-17", "2026-05-15",
+                "2026-06-17", "2026-07-17", "2026-08-18", "2026-09-18"]
+    assert [d for d in b.dates[mask] if d >= "2024-10"] == observed
+    np.testing.assert_array_equal(mask, fu.crude_roll_mask(b.dates))
+    h = fu.us_exchange_holidays([2025, 2026])
+    for d in ("2025-01-20", "2025-04-18", "2025-05-26", "2025-06-19", "2025-11-27",
+              "2026-04-03", "2026-05-25", "2026-07-03", "2026-12-25"):
+        assert d in h
+    # New Year's on a Saturday (2022) is not moved back into December
+    assert "2021-12-31" not in fu.us_exchange_holidays([2021, 2022])

@@ -229,3 +229,39 @@ M2K's continuous series rolls one session later than MES/MNQ, set per contract i
 lengths (so the long bias of a rising market does not count as skill), a
 next-open entry variant, an entry x exit sensitivity grid, the fade in R by
 period and before costs, and prop pass rates against a zero-edge baseline.
+
+## Trend following on MES (`examples/mes_trend.py`)
+
+`hmm_trader/trend.py` has three textbook rules on roll-adjusted daily closes,
+all causal: `sma_cross_positions` (50/200, long/flat or long/short),
+`donchian_positions` (55-day breakout, 20-day exit, Turtle-style) and
+`tsmom_positions` (sign of the 12-month return). `signed_session_steps` turns
+long/short positions into per-session P&L, held through the daily break or flat
+through it, and `circular_shift_pvalue` is a timing test that shifts a rule's own
+position series in time (same exposure and trade lengths, scrambled timing).
+
+```bash
+python -m examples.mes_trend                     # MES, 2020-05 .. 2026-09
+python -m examples.mes_trend --symbol MNQ --contracts 1,2
+python -m examples.mes_trend --symbol MGC --contracts 1,2,3   # gold
+python -m examples.mes_trend --symbol MCL --contracts 1,2,3   # crude, 2022-07 on
+```
+
+`examples/data/mgc_daily.csv` is TradingView `MGC1!`/`MGC2!` daily, 2019-05 to
+2026-09. Gold rolls to the next active month (Feb/Apr/Jun/Aug/Dec) on the
+second-to-last session of Jan/Mar/May/Jul/Nov (`futures.gold_roll_mask`, chosen
+per contract by `ContractSpec.roll_rule`). Its daily close is the 13:30 ET
+settlement (`ContractSpec.daily_close_et`), so the flat-through-breaks version on
+gold is also flat for the 13:30-16:10 ET hours a prop account could trade.
+
+`examples/data/mcl_daily.csv` is TradingView `MCL1!`/`MCL2!` daily from MCL's
+launch (2021-07) to 2026-09, so after the 252-session warm-up the test covers
+2022-07 on. Crude rolls monthly, 2 sessions before WTI's last trading day
+(3 business days before the 25th, 4 if the 25th is not a business day) and
+1 session before it in February (`futures.crude_roll_mask`, with exchange
+holidays from `futures.us_exchange_holidays`). Its daily close is the 14:30 ET
+settlement, with the same caveat as gold.
+
+The example compares each rule with buy & hold, reports the timing test, net by
+year, a fast/slow sensitivity table and prop pass rates (flat through every
+daily break) against the zero-edge baseline.
