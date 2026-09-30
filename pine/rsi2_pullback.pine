@@ -97,7 +97,8 @@ plotshape(exitSignal, "Exit signal", shape.xcross, location.abovebar, color.oran
 
 // ---------- Status panel ----------
 var table panel = table.new(position.top_right, 2, 7, bgcolor = color.new(color.gray, 85), border_width = 1)
-if showPanel and barstate.islast
+// the last confirmed bar: this strategy only runs when a bar closes, so it never sees the open one
+if showPanel and bar_index >= last_bar_index - 1
     color ok  = color.new(color.teal, 0)
     color bad = color.new(color.red, 0)
     table.cell(panel, 0, 0, "RSI(" + str.tostring(rsiLen) + ")", text_halign = text.align_left)

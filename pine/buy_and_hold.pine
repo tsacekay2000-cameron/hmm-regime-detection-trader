@@ -92,7 +92,8 @@ bgcolor(active and not active[1] ? color.new(color.teal, 70) : na, title = "Star
 
 // ---------- Status panel ----------
 var table panel = table.new(position.top_right, 2, 5, bgcolor = color.new(color.gray, 85), border_width = 1)
-if showEval and barstate.islast
+// the last confirmed bar: this strategy only runs when a bar closes, so it never sees the open one
+if showEval and bar_index >= last_bar_index - 1
     color resColor = result == "PASSED" ? color.new(color.teal, 0) : str.startswith(result, "FAILED") ? color.new(color.red, 0) : chart.fg_color
     table.cell(panel, 0, 0, "Evaluation", text_halign = text.align_left)
     table.cell(panel, 1, 0, result, text_color = resColor)
