@@ -116,3 +116,22 @@ def test_gold_roll_mask_and_dispatch():
                                   fu.quarterly_roll_mask(b.dates, 3))
     with pytest.raises(ValueError):
         fu.roll_mask(b.dates, fu.ContractSpec("X", 1.0, 1.0, roll_rule="weekly"))
+
+
+def test_crude_roll_mask_and_holidays():
+    b = fu.load_bars(fu.Path(__file__).parents[1] / "examples" / "data" / "mcl_daily.csv")
+    mask = fu.roll_mask(b.dates, fu.CONTRACTS["MCL"])
+    # matched against individual MCL contracts (Massive, 2024-10 .. 2026-09)
+    observed = ["2024-10-18", "2024-11-18", "2024-12-17", "2025-01-16", "2025-02-19",
+                "2025-03-18", "2025-04-17", "2025-05-16", "2025-06-17", "2025-07-18",
+                "2025-08-18", "2025-09-18", "2025-10-17", "2025-11-18", "2025-12-17",
+                "2026-01-15", "2026-02-19", "2026-03-18", "2026-04-17", "2026-05-15",
+                "2026-06-17", "2026-07-17", "2026-08-18", "2026-09-18"]
+    assert [d for d in b.dates[mask] if d >= "2024-10"] == observed
+    np.testing.assert_array_equal(mask, fu.crude_roll_mask(b.dates))
+    h = fu.us_exchange_holidays([2025, 2026])
+    for d in ("2025-01-20", "2025-04-18", "2025-05-26", "2025-06-19", "2025-11-27",
+              "2026-04-03", "2026-05-25", "2026-07-03", "2026-12-25"):
+        assert d in h
+    # New Year's on a Saturday (2022) is not moved back into December
+    assert "2021-12-31" not in fu.us_exchange_holidays([2021, 2022])

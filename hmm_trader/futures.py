@@ -25,7 +25,7 @@ class ContractSpec:
     multiplier: float  # dollars per point
     tick: float        # minimum price increment, in points
     roll_sessions: int = 3  # TradingView "1!" switches this many sessions before expiry
-    roll_rule: str = "quarterly"  # "quarterly" (equity index) or "gold" (see gold_roll_mask)
+    roll_rule: str = "quarterly"  # "quarterly" (equity index), "gold" or "crude"
     daily_close_et: str = "16:00"  # time of TradingView's daily close (settlement), ET
 
     @property
@@ -40,7 +40,7 @@ CONTRACTS = {
     "MYM": ContractSpec("MYM", multiplier=0.5, tick=1.0),    # Micro E-mini Dow
     "MGC": ContractSpec("MGC", multiplier=10.0, tick=0.10, roll_rule="gold",
                         daily_close_et="13:30"),  # Micro Gold
-    "MCL": ContractSpec("MCL", multiplier=100.0, tick=0.01,
+    "MCL": ContractSpec("MCL", multiplier=100.0, tick=0.01, roll_rule="crude",
                         daily_close_et="14:30"),  # Micro WTI Crude, $100/bbl
 }
 
@@ -142,10 +142,85 @@ def gold_roll_mask(dates: Sequence[str]) -> np.ndarray:
     return mask
 
 
+def us_exchange_holidays(years: Sequence[int]) -> list[str]:
+    """CME holidays for US energy and index futures (no settlement those days).
+
+    New Year's, MLK, Presidents', Good Friday, Memorial, Juneteenth (from
+    2022), Independence, Labor, Thanksgiving and Christmas, moved to the
+    nearest weekday when they fall on a weekend (New Year's on a Saturday is
+    not moved back into December). Listed rather than read from the data,
+    whose series can carry bars dated on these days.
+    """
+    def nth(y, m, weekday, n):  # n-th weekday of the month, n=-1 for the last
+        if n > 0:
+            first = dt.date(y, m, 1)
+            return first + dt.timedelta(days=(weekday - first.weekday()) % 7 + 7 * (n - 1))
+        last = dt.date(y, m + 1, 1) - dt.timedelta(days=1)
+        return last - dt.timedelta(days=(last.weekday() - weekday) % 7)
+
+    def observed(d):
+        return d + dt.timedelta(days={5: -1, 6: 1}.get(d.weekday(), 0))
+
+    def easter(y):  # anonymous Gregorian algorithm (Meeus/Butcher)
+        a, b, c = y % 19, y // 100, y % 100
+        d, e = b // 4, b % 4
+        g = (b - (b + 8) // 25 + 1) // 3
+        h = (19 * a + b - d - g + 15) % 30
+        l_ = (32 + 2 * e + 2 * (c // 4) - h - c % 4) % 7
+        m = (a + 11 * h + 22 * l_) // 451
+        n = h + l_ - 7 * m + 114
+        return dt.date(y, n // 31, n % 31 + 1)
+
+    out = []
+    for y in years:
+        days = [nth(y, 1, 0, 3), nth(y, 2, 0, 3), easter(y) - dt.timedelta(days=2),
+                nth(y, 5, 0, -1), observed(dt.date(y, 7, 4)), nth(y, 9, 0, 1),
+                nth(y, 11, 3, 4), observed(dt.date(y, 12, 25))]
+        if dt.date(y, 1, 1).weekday() != 5:
+            days.append(observed(dt.date(y, 1, 1)))
+        if y >= 2022:
+            days.append(observed(dt.date(y, 6, 19)))
+        out += [d.isoformat() for d in days]
+    return sorted(out)
+
+
+def crude_roll_mask(dates: Sequence[str]) -> np.ndarray:
+    """True on the first session of the new contract for TradingView's MCL1!.
+
+    WTI's last trading day is 3 business days before the 25th of the month
+    before delivery (4 if the 25th is not a business day). TradingView moves
+    MCL1! to the next month 2 business days before that (1 in February),
+    which matched every roll from 2024-10 to 2026-09 against individual
+    contracts. Sessions are counted from the data: the series dates the
+    session after an exchange holiday with the holiday's date (e.g. a
+    2025-01-20 bar and no 2025-01-21), so the count is right, but whether the
+    25th is a business day comes from ``us_exchange_holidays``. A month the
+    data ends before the 25th of is skipped.
+    """
+    dates = np.asarray(dates, dtype=str)
+    mask = np.zeros(dates.size, dtype=bool)
+    if dates.size == 0:
+        return mask
+    years = range(int(dates[0][:4]), int(dates[-1][:4]) + 1)
+    holidays = us_exchange_holidays(years)
+    for m in np.unique([d[:7] for d in dates]):
+        t25 = f"{m}-25"
+        before = int(np.searchsorted(dates, t25))  # sessions dated before the 25th
+        if before >= dates.size:
+            continue
+        ltd = before - (3 if np.is_busday(t25, holidays=holidays) else 4)
+        roll = ltd - (1 if m.endswith("-02") else 2)
+        if roll >= 1:
+            mask[roll] = True
+    return mask
+
+
 def roll_mask(dates: Sequence[str], spec: "ContractSpec") -> np.ndarray:
     """Roll days of TradingView's continuous ``1!`` series for ``spec``."""
     if spec.roll_rule == "gold":
         return gold_roll_mask(dates)
+    if spec.roll_rule == "crude":
+        return crude_roll_mask(dates)
     if spec.roll_rule == "quarterly":
         return quarterly_roll_mask(dates, spec.roll_sessions)
     raise ValueError(f"unknown roll rule {spec.roll_rule!r}")
