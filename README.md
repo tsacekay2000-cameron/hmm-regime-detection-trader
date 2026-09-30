@@ -209,9 +209,13 @@ python -m examples.orb_narrow_range --k 0.8 --lookback 10
 python -m examples.mes_mean_reversion                 # both parts
 python -m examples.mes_mean_reversion --part a --horizon 250
 python -m examples.mes_mean_reversion --part a --symbols MES,MNQ,M2K
+python -m examples.mes_mean_reversion --part c --symbols MES,MNQ,M2K   # flat through breaks
 ```
 
-Part A runs on any symbol with bundled daily data (MES, MNQ and
+Part C re-runs the RSI(2) signals for prop firms that require being flat through
+the daily maintenance break: each held session is bought at its open and sold at
+its close (a round trip every session), and, where 5-minute data exists, only
+09:30-15:55 ET on the same days. Part A runs on any symbol with bundled daily data (MES, MNQ and
 `examples/data/m2k_daily.csv`, TradingView `M2K1!`/`M2K2!` 2019-05 to 2026-09;
 M2K's continuous series rolls one session later than MES/MNQ, set per contract in
 `ContractSpec.roll_sessions`). The example reports the RSI(2) trades against randomly timed trades of the same

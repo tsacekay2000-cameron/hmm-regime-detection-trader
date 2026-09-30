@@ -119,3 +119,20 @@ def test_example_part_a_other_symbols(capsys):
     assert "1 MNQ," in out and "1 M2K," in out
     with pytest.raises(SystemExit):
         ex.main(["--part", "a", "--symbols", "XYZ"])
+
+
+def test_trade_pnl_includes_exit_side_cost():
+    from examples import mes_mean_reversion as ex
+    # rows = sessions; the exit side is charged on the first session after a trade
+    steps = np.array([[0, 0], [-1, 5], [0, 3], [-1, 0], [0, 0]], dtype=float)
+    assert list(ex.trade_pnl(steps, [(1, 3)])) == [6.0]
+
+
+def test_example_part_c_flat_through_breaks(capsys):
+    from examples import mes_mean_reversion as ex
+    ex.main(["--part", "c", "--symbols", "MES,M2K", "--perms", "20", "--sims", "50",
+             "--horizon", "60"])
+    out = capsys.readouterr().out
+    assert "C. RSI(2) flat through every daily break, 1 MES" in out
+    assert "V2 09:30 -> 15:55 ET only" in out  # MES has 5-min data
+    assert "1 M2K" in out

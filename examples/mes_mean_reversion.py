@@ -13,6 +13,12 @@ A. Daily RSI(2), 1 contract, long only (Connors & Alvarez, 2008): buy at the
    trades with randomly timed trades of the same lengths, taken on days the
    200-day filter allowed, to see whether the RSI(2) timing adds anything.
 
+C. (``--part c``) RSI(2) for prop firms that require being flat through the
+   daily maintenance break: the same signals, but each held session is
+   bought at its open (18:00 ET the evening before) and sold at its close,
+   paying a round trip every session (V1). V2 holds only 09:30-15:55 ET on
+   the same days, from the 5-minute data (MES/MNQ, 2024-10 onward only).
+
 B. Intraday Bollinger fade on 5-minute bars, $200 risk per trade: fade a
    close outside the 20-bar +/- 2 sd band at the next open, stop 2 sd away,
    exit on a close back through the average or at 15:55 ET. Flat every
@@ -73,6 +79,12 @@ def prop_rows(label: str, steps: np.ndarray, active: np.ndarray, args,
         print(challenge_row(f"{label}, {name}", res))
 
 
+def trade_pnl(steps: np.ndarray, spans) -> np.ndarray:
+    """P&L per trade. Includes the session after the trade, where
+    ``session_steps`` charges the exit side of a position held overnight."""
+    return np.array([steps[s:e + 1].sum() for s, e in spans])
+
+
 def part_a(args, rng: np.random.Generator, symbol: str = "MES") -> None:
     spec = fu.CONTRACTS[symbol]
     cost = 0.62 + spec.tick_value  # commission + 1 tick slippage per side
@@ -91,7 +103,7 @@ def part_a(args, rng: np.random.Generator, symbol: str = "MES") -> None:
     gross = session_steps(bars, always, spec, overnight=True, cost_per_side=0.0).sum(axis=1)
     daily, bh_daily = steps.sum(axis=1)[sl], bh.sum(axis=1)[sl]
     spans = [(s, e) for s, e in mr.trade_spans(held) if s >= start]
-    pnl = np.array([steps[s:e].sum() for s, e in spans])
+    pnl = trade_pnl(steps, spans)
     hold = np.array([e - s for s, e in spans])
     notional = np.array([adj_close[s] for s, _ in spans]) * spec.multiplier
 
@@ -137,12 +149,12 @@ def part_a(args, rng: np.random.Generator, symbol: str = "MES") -> None:
         for level in entries:
             h = mr.rsi2_positions(adj_close, entry=level, exit_sma=exit_n)
             s = session_steps(bars, h, spec, overnight=True, cost_per_side=cost)
-            tp = np.array([s[a:b].sum() for a, b in mr.trade_spans(h) if a >= start])
+            tp = trade_pnl(s, [(a, b) for a, b in mr.trade_spans(h) if a >= start])
             cells.append(f"{tp.size:3d}, {tp.mean():+5.0f}" if tp.size else "-")
         print(f"  exit>{exit_n}d  " + "".join(f"{c:>16}" for c in cells))
     h = mr.rsi2_positions(adj_close, trend=None)
     s = session_steps(bars, h, spec, overnight=True, cost_per_side=cost)
-    tp = np.array([s[a:b].sum() for a, b in mr.trade_spans(h) if a >= start])
+    tp = trade_pnl(s, [(a, b) for a, b in mr.trade_spans(h) if a >= start])
     print(f"  without the 200-day filter: {tp.size} trades, avg ${tp.mean():+.0f}, "
           f"win {np.mean(tp > 0):.0%}, net ${tp.sum():+,.0f}")
 
@@ -150,6 +162,80 @@ def part_a(args, rng: np.random.Generator, symbol: str = "MES") -> None:
     print(f"  {'':<34}{'pass':>7}{'max DD':>8}{'daily':>8}{'timeout':>9}{'days':>7}")
     for n in (1, 2, 3):
         prop_rows(f"{n} {symbol}", steps[sl] * n, held[sl], args, rng)
+
+
+def rth_open_close(symbol: str) -> dict[str, tuple[float, float]]:
+    """Trade date -> (09:30 open, 15:55 bar close) from the bundled 5-min data."""
+    path = DATA_DIR / f"{symbol.lower()}_5min_rth.csv.gz"
+    if not path.exists():
+        return {}
+    bars = orb.load_intraday(path)
+    out = {}
+    for date, sl in bars.days():
+        minute = bars.minute[sl]
+        if minute[0] == 9 * 60 + 30 and minute[-1] == 15 * 60 + 55:
+            out[str(date)] = (bars.open[sl][0], bars.close[sl][-1])
+    return out
+
+
+def part_c(args, rng: np.random.Generator, symbol: str) -> None:
+    spec = fu.CONTRACTS[symbol]
+    cost = 0.62 + spec.tick_value
+    bars = fu.load_bars(DATA_DIR / f"{symbol.lower()}_daily.csv")
+    roll = fu.quarterly_roll_mask(bars.dates, spec.roll_sessions)
+    adj_close = bars.close[0] * np.r_[1.0, np.cumprod(1 + fu.adjusted_returns(bars, roll))]
+    held = mr.rsi2_positions(adj_close)
+    dates = bars.dates[1:]
+    start = int(np.argmax(np.isfinite(mr.sma(adj_close, 200))))
+    sl = slice(start, None)
+    spans = [(s, e) for s, e in mr.trade_spans(held) if s >= start]
+
+    over = session_steps(bars, held, spec, overnight=True, cost_per_side=cost)
+    flat = session_steps(bars, held, spec, overnight=False, cost_per_side=cost)
+    p_over = trade_pnl(over, spans)
+    p_flat = trade_pnl(flat, spans)
+    days = int(held[sl].sum())
+    print(f"== C. RSI(2) flat through every daily break, 1 {symbol}, "
+          f"{dates[start]} .. {dates[-1]} ==")
+    print(f"  Same signals: {len(spans)} trades, {days} sessions in the market.")
+    print(f"  held overnight (part A):       avg ${p_over.mean():+.0f} per trade, win "
+          f"{np.mean(p_over > 0):.0%}, net ${p_over.sum():+,.0f}")
+    print(f"  V1 session open -> close each day: avg ${p_flat.mean():+.0f} per trade, win "
+          f"{np.mean(p_flat > 0):.0%}, net ${p_flat.sum():+,.0f}, max DD "
+          f"${max_drawdown(flat[sl].sum(axis=1)):,.0f} (a round trip every session)")
+
+    gross = session_steps(bars, np.ones_like(held), spec, overnight=False,
+                          cost_per_side=0.0).sum(axis=1)
+    cum = np.r_[0.0, np.cumsum(gross)]
+    hold = np.array([e - s for s, e in spans])
+    trend_ok = adj_close > mr.sma(adj_close, 200)
+    eligible = np.flatnonzero(trend_ok[:-1])
+    eligible = eligible[eligible >= start]
+    observed = np.mean([cum[e] - cum[s] for s, e in spans])
+    sims = np.array([np.mean(cum[np.minimum(st + hold, gross.size)] - cum[st])
+                     for st in (rng.choice(eligible, size=len(spans))
+                                for _ in range(args.perms))])
+    print(f"  V1 timing test (before costs): avg ${observed:+.0f} per trade vs "
+          f"${sims.mean():+.0f} for random entries of the same lengths; "
+          f"p = {np.mean(sims >= observed):.3f}")
+
+    rth = rth_open_close(symbol)
+    idx = [t for t in np.flatnonzero(held) if t >= start and str(dates[t]) in rth]
+    if idx:
+        o = np.array([rth[str(dates[t])][0] for t in idx])
+        c = np.array([rth[str(dates[t])][1] for t in idx])
+        rth_pnl = (c - o) * spec.multiplier - 2 * cost
+        sess_pnl = flat[idx].sum(axis=1)
+        se = rth_pnl.std(ddof=1) / np.sqrt(rth_pnl.size) if rth_pnl.size > 1 else np.nan
+        print(f"  V2 09:30 -> 15:55 ET only, {dates[idx[0]]} .. {dates[idx[-1]]} "
+              f"({len(idx)} held sessions with 5-min data): avg ${rth_pnl.mean():+.0f} ± "
+              f"{se:.0f} per session vs ${sess_pnl.mean():+.0f} for the full session "
+              f"(V1) on the same days")
+
+    print(f"\n  Prop evaluation, V1 (flat through every break), {args.horizon} sessions max:")
+    print(f"  {'':<34}{'pass':>7}{'max DD':>8}{'daily':>8}{'timeout':>9}{'days':>7}")
+    for n in (1, 2, 3):
+        prop_rows(f"{n} {symbol}", flat[sl] * n, held[sl], args, rng)
 
 
 def part_b(args, rng: np.random.Generator) -> None:
@@ -192,7 +278,8 @@ def part_b(args, rng: np.random.Generator) -> None:
 
 def main(argv: Optional[list[str]] = None) -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--part", choices=("a", "b", "both"), default="both")
+    ap.add_argument("--part", choices=("a", "b", "c", "both", "all"), default="both",
+                    help="both = A and B; all = A, B and C")
     ap.add_argument("--symbols", default="MES",
                     help="part A symbols with bundled daily data, e.g. MES,MNQ,M2K")
     ap.add_argument("--split", default="2025-10-01", help="period split for part B")
@@ -203,14 +290,19 @@ def main(argv: Optional[list[str]] = None) -> None:
     args = ap.parse_args(argv)
     rng = np.random.default_rng(args.seed)
     print(f"Prop rules on a ${ACCOUNT:,} account: {RULES.describe()}\n")
-    if args.part in ("a", "both"):
-        for symbol in [x.strip().upper() for x in args.symbols.split(",")]:
-            path = DATA_DIR / f"{symbol.lower()}_daily.csv"
-            if symbol not in fu.CONTRACTS or not path.exists():
-                ap.error(f"no bundled daily data for {symbol}")
+    symbols = [x.strip().upper() for x in args.symbols.split(",")]
+    for symbol in symbols:
+        if symbol not in fu.CONTRACTS or not (DATA_DIR / f"{symbol.lower()}_daily.csv").exists():
+            ap.error(f"no bundled daily data for {symbol}")
+    if args.part in ("a", "both", "all"):
+        for symbol in symbols:
             part_a(args, rng, symbol)
             print()
-    if args.part in ("b", "both"):
+    if args.part in ("c", "all"):
+        for symbol in symbols:
+            part_c(args, rng, symbol)
+            print()
+    if args.part in ("b", "both", "all"):
         part_b(args, rng)
 
 
