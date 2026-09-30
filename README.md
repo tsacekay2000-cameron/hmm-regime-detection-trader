@@ -229,3 +229,22 @@ M2K's continuous series rolls one session later than MES/MNQ, set per contract i
 lengths (so the long bias of a rising market does not count as skill), a
 next-open entry variant, an entry x exit sensitivity grid, the fade in R by
 period and before costs, and prop pass rates against a zero-edge baseline.
+
+## Trend following on MES (`examples/mes_trend.py`)
+
+`hmm_trader/trend.py` has three textbook rules on roll-adjusted daily closes,
+all causal: `sma_cross_positions` (50/200, long/flat or long/short),
+`donchian_positions` (55-day breakout, 20-day exit, Turtle-style) and
+`tsmom_positions` (sign of the 12-month return). `signed_session_steps` turns
+long/short positions into per-session P&L, held through the daily break or flat
+through it, and `circular_shift_pvalue` is a timing test that shifts a rule's own
+position series in time (same exposure and trade lengths, scrambled timing).
+
+```bash
+python -m examples.mes_trend                     # MES, 2020-05 .. 2026-09
+python -m examples.mes_trend --symbol MNQ --contracts 1,2
+```
+
+The example compares each rule with buy & hold, reports the timing test, net by
+year, a fast/slow sensitivity table and prop pass rates (flat through every
+daily break) against the zero-edge baseline.
