@@ -149,3 +149,46 @@ python -m examples.micro_futures_backtest --symbols MNQ --contracts 1,2 --overni
 Bundled data: `examples/data/{mes,mnq}_daily.csv`, TradingView `CME_MINI:MES1!`
 / `MNQ1!` daily bars from 2019-05-06 to 2026-09-29 dated by trade date, with the
 `2!` close as `next_close`.
+
+## Opening range breakout on MES / MNQ (`examples/orb_backtest.py`)
+
+`hmm_trader/orb.py` backtests a one-trade-a-day opening range breakout on 5-minute
+bars: stop entries one tick beyond the first 5/15/30 minutes' range after 09:30
+ET, stop at the other side, exit at 1R / 2R or flat at 15:55 ET, sized to a fixed
+dollar risk (days too wide for one contract are skipped). Fills are conservative:
+a tick of slippage on stop entries and exits, a bar touching both stop and target
+counts as a stop, gaps fill at the open.
+
+```bash
+python -m examples.orb_backtest                        # MES + MNQ, $200 risk grid
+python -m examples.orb_backtest --symbols MGC,MCL      # micro gold and crude
+python -m examples.orb_backtest --symbols MNQ --risk 200,400 --split 2025-07-01
+```
+
+Session times per symbol (`SESSIONS` in the example): MES/MNQ range from 09:30 ET,
+flat by 15:55; MGC from the 08:20 ET pit open, flat by the 13:30 settlement; MCL
+from 09:00 ET, flat by 14:30.
+
+The example picks the best grid point on data before `--split` and reports it on
+the unseen data after, then scores it as a $50k prop evaluation next to a
+zero-edge baseline (the same trades minus their average profit).
+
+Bundled data: `examples/data/{mes,mnq,mgc,mcl}_5min_rth.csv.gz`, 5-minute bars of
+the front contract from Massive.com, 2024-10-01 to 2026-09-28, times in
+US/Eastern. MES/MNQ cover 09:30-16:00 and roll on the `hmm_trader.futures`
+calendar; MGC/MCL cover 08:00-16:00 and use each day's highest-volume contract
+(never rolling back), which puts gold on Feb/Apr/Jun/Aug/Dec and crude on the
+next monthly contract about a week before expiry. The vendor data has a few
+mid-session gaps; the backtest resumes at the next bar's open.
+
+**Narrow-range filter** (`examples/orb_narrow_range.py`): `ORBParams(max_range_ratio=k,
+range_lookback=N)` trades only when today's opening range is at most `k` times the
+median of the previous `N` sessions (causal, with an `N`-session warm-up). The
+example tests a 30-minute ORB with k = 1, N = 20 on all four symbols, with a
+permutation test against random same-size day subsets, a split by period, a k x N
+robustness grid and a prop evaluation against the zero-edge baseline:
+
+```bash
+python -m examples.orb_narrow_range
+python -m examples.orb_narrow_range --k 0.8 --lookback 10
+```
