@@ -9,7 +9,7 @@ PINE = Path(__file__).parents[1] / "pine"
 
 
 # symbol, trades, flat-through-breaks total per contract reported in the study
-@pytest.mark.parametrize("symbol,n,total", [("MES", 60, 8643), ("MNQ", 55, 9116)])
+@pytest.mark.parametrize("symbol,n,total", [("MES", 60, 8643), ("MNQ", 55, 9116), ("M2K", 51, 2515)])
 def test_reference_csv_is_current(symbol, n, total):
     rows = ex.reference_trades(symbol)
     with open(PINE / f"rsi2_{symbol.lower()}_reference_trades.csv") as f:

@@ -1,5 +1,5 @@
 // RSI(2) pullback, as tested in hmm-regime-detection-trader (examples/mes_mean_reversion.py).
-// Use on a DAILY chart of MES1! or MNQ1! with back-adjustment on ("B-ADJ" / "Adjust for contract changes").
+// Use on a DAILY chart of MES1!, MNQ1! or M2K1! with back-adjustment on ("B-ADJ" / "Adjust for contract changes").
 // Add it to each chart you want alerts for; the size and alert text follow the chart's symbol.
 //
 // Rules (Connors, fixed in advance, nothing tuned):
@@ -11,13 +11,14 @@
 //     buy at the session open (6 PM ET) and sell at the daily close, so there is never a
 //     position through the 5-6 PM ET break. This is the version that passed ~40% of
 //     simulated $50k evaluations at 2 MES (vs ~15% for the same trades with no edge), and
-//     ~20% at 1 MNQ (vs ~8%), where the timing edge is weaker (p = 0.16 vs 0.003 on MES).
+//     ~20% at 1 MNQ (vs ~8%) and ~23% at 3 M2K (vs ~11%), where the timing edge is weaker
+//     (p = 0.16 on MNQ and 0.08 on M2K, vs 0.003 on MES).
 //     Each session shows as its own trade in the Strategy Tester.
 //   - "Hold overnight": buy at the next session open after the signal, sell at the close
 //     of the exit day.
 //
 // Costs: $0.62 commission per contract per side plus 1 tick of slippage, as in the Python
-// backtest. Reference trades: pine/rsi2_mes_reference_trades.csv and rsi2_mnq_reference_trades.csv
+// backtest. Reference trades: pine/rsi2_{mes,mnq,m2k}_reference_trades.csv
 // (python -m examples.rsi2_trade_list).
 // Backtesting research, not financial advice.
 
