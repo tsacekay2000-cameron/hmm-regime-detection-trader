@@ -91,17 +91,22 @@ plot(plotFloor ? strategy.initial_capital + math.min(peak - maxDd, 0.0) : na, "D
 bgcolor(active and not active[1] ? color.new(color.teal, 70) : na, title = "Start")
 
 // ---------- Status panel ----------
-var table panel = table.new(position.top_right, 2, 5, bgcolor = color.new(color.gray, 85), border_width = 1)
+// Panel colors: a solid dark panel with light text, readable on light and dark chart themes
+PANEL_BG   = #1E222D
+PANEL_TEXT = #F0F3FA
+PANEL_OK   = #3DDC97
+PANEL_BAD  = #FF6B6B
+var table panel = table.new(position.top_right, 2, 5, bgcolor = PANEL_BG, frame_color = #434651, frame_width = 1, border_color = #2A2E39, border_width = 1)
 // the last confirmed bar: this strategy only runs when a bar closes, so it never sees the open one
 if showEval and bar_index >= last_bar_index - 1
-    color resColor = result == "PASSED" ? color.new(color.teal, 0) : str.startswith(result, "FAILED") ? color.new(color.red, 0) : chart.fg_color
-    table.cell(panel, 0, 0, "Evaluation", text_halign = text.align_left)
+    color resColor = result == "PASSED" ? PANEL_OK : str.startswith(result, "FAILED") ? PANEL_BAD : PANEL_TEXT
+    table.cell(panel, 0, 0, "Evaluation", text_halign = text.align_left, text_color = PANEL_TEXT)
     table.cell(panel, 1, 0, result, text_color = resColor)
-    table.cell(panel, 0, 1, "Sessions", text_halign = text.align_left)
-    table.cell(panel, 1, 1, str.tostring(sessions) + " of " + str.tostring(maxDays))
-    table.cell(panel, 0, 2, "Best end-of-day P&L", text_halign = text.align_left)
-    table.cell(panel, 1, 2, str.tostring(peak, "$#,###"))
-    table.cell(panel, 0, 3, "P&L now", text_halign = text.align_left)
-    table.cell(panel, 1, 3, str.tostring(pnl, "$#,###"))
-    table.cell(panel, 0, 4, "Chart", text_halign = text.align_left)
-    table.cell(panel, 1, 4, timeframe.isdaily ? "daily: OK" : "switch to a 1D chart", text_color = timeframe.isdaily ? color.new(color.teal, 0) : color.new(color.red, 0))
+    table.cell(panel, 0, 1, "Sessions", text_halign = text.align_left, text_color = PANEL_TEXT)
+    table.cell(panel, 1, 1, str.tostring(sessions) + " of " + str.tostring(maxDays), text_color = PANEL_TEXT)
+    table.cell(panel, 0, 2, "Best end-of-day P&L", text_halign = text.align_left, text_color = PANEL_TEXT)
+    table.cell(panel, 1, 2, str.tostring(peak, "$#,###"), text_color = PANEL_TEXT)
+    table.cell(panel, 0, 3, "P&L now", text_halign = text.align_left, text_color = PANEL_TEXT)
+    table.cell(panel, 1, 3, str.tostring(pnl, "$#,###"), text_color = PANEL_TEXT)
+    table.cell(panel, 0, 4, "Chart", text_halign = text.align_left, text_color = PANEL_TEXT)
+    table.cell(panel, 1, 4, timeframe.isdaily ? "daily: OK" : "switch to a 1D chart", text_color = timeframe.isdaily ? PANEL_OK : PANEL_BAD)

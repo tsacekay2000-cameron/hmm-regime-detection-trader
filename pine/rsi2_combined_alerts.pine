@@ -90,18 +90,23 @@ hline(entryLevel, "Buy level", color = color.new(color.gray, 30), linestyle = hl
 bgcolor(wA ? color.new(color.teal, 85) : wB ? color.new(color.purple, 88) : na, title = "Session in trade")
 
 // ---------- Status panel ----------
-var table panel = table.new(position.top_right, 3, 4, bgcolor = color.new(color.gray, 85), border_width = 1)
+// Panel colors: a solid dark panel with light text, readable on light and dark chart themes
+PANEL_BG   = #1E222D
+PANEL_TEXT = #F0F3FA
+PANEL_OK   = #3DDC97
+PANEL_BAD  = #FF6B6B
+var table panel = table.new(position.top_right, 3, 4, bgcolor = PANEL_BG, frame_color = #434651, frame_width = 1, border_color = #2A2E39, border_width = 1)
 if barstate.islast
-    color ok = color.new(color.teal, 0)
-    table.cell(panel, 0, 0, "")
-    table.cell(panel, 1, 0, "RSI(2)")
-    table.cell(panel, 2, 0, "Next session")
-    table.cell(panel, 0, 1, "MES")
-    table.cell(panel, 1, 1, str.tostring(rA, "#.0"))
-    table.cell(panel, 2, 1, hA ? "LONG " + str.tostring(qtyA) + " MES" : "flat", text_color = hA ? ok : chart.fg_color)
-    table.cell(panel, 0, 2, second)
-    table.cell(panel, 1, 2, str.tostring(rB, "#.0"))
-    table.cell(panel, 2, 2, hB ? (tradeB ? "LONG " + str.tostring(qtyB) + " " + second : "signal, info only") : "flat", text_color = tradeB ? ok : chart.fg_color)
-    table.cell(panel, 0, 3, "Chart")
-    table.cell(panel, 1, 3, "")
-    table.cell(panel, 2, 3, timeframe.isdaily ? "daily: OK" : "switch to a 1D chart", text_color = timeframe.isdaily ? ok : color.red)
+    color ok = PANEL_OK
+    table.cell(panel, 0, 0, "", text_color = PANEL_TEXT)
+    table.cell(panel, 1, 0, "RSI(2)", text_color = PANEL_TEXT)
+    table.cell(panel, 2, 0, "Next session", text_color = PANEL_TEXT)
+    table.cell(panel, 0, 1, "MES", text_color = PANEL_TEXT)
+    table.cell(panel, 1, 1, str.tostring(rA, "#.0"), text_color = PANEL_TEXT)
+    table.cell(panel, 2, 1, hA ? "LONG " + str.tostring(qtyA) + " MES" : "flat", text_color = hA ? ok : PANEL_TEXT)
+    table.cell(panel, 0, 2, second, text_color = PANEL_TEXT)
+    table.cell(panel, 1, 2, str.tostring(rB, "#.0"), text_color = PANEL_TEXT)
+    table.cell(panel, 2, 2, hB ? (tradeB ? "LONG " + str.tostring(qtyB) + " " + second : "signal, info only") : "flat", text_color = tradeB ? ok : PANEL_TEXT)
+    table.cell(panel, 0, 3, "Chart", text_color = PANEL_TEXT)
+    table.cell(panel, 1, 3, "", text_color = PANEL_TEXT)
+    table.cell(panel, 2, 3, timeframe.isdaily ? "daily: OK" : "switch to a 1D chart", text_color = timeframe.isdaily ? ok : PANEL_BAD)
