@@ -1,5 +1,5 @@
 // RSI(2) pullback, as tested in hmm-regime-detection-trader (examples/mes_mean_reversion.py).
-// Use on a DAILY chart of MES1!, MNQ1!, M2K1!, MGC1! or MCL1! with back-adjustment on ("B-ADJ" / "Adjust for contract changes").
+// Use on a DAILY chart of MES1!, MNQ1!, M2K1!, MYM1!, MGC1! or MCL1! with back-adjustment on ("B-ADJ" / "Adjust for contract changes").
 // Add it to each chart you want alerts for; the size and alert text follow the chart's symbol.
 //
 // Rules (Connors, fixed in advance, nothing tuned):
@@ -11,8 +11,8 @@
 //     buy at the session open (6 PM ET) and sell at the daily close, so there is never a
 //     position through the 5-6 PM ET break. This is the version that passed ~40% of
 //     simulated $50k evaluations at 2 MES (vs ~15% for the same trades with no edge), and
-//     ~20% at 1 MNQ (vs ~8%) and ~23% at 3 M2K (vs ~11%), where the timing edge is weaker
-//     (p = 0.16 on MNQ and 0.08 on M2K, vs 0.003 on MES). On gold (MGC) it showed no edge:
+//     ~32% at 3 MYM (vs ~18%), ~20% at 1 MNQ (vs ~8%) and ~23% at 3 M2K (vs ~11%), where the
+//     timing edge is weaker (p = 0.06 on MYM, 0.16 on MNQ and 0.08 on M2K, vs 0.003 on MES). On gold (MGC) it showed no edge:
 //     p = 0.43, and 1 MGC passed ~8% vs ~7% with no edge. On crude (MCL, from 2022) prop mode
 //     lost money (-$981 per contract, p = 0.41) and passed almost no evaluations. Gold's and
 //     crude's daily closes are their 1:30 and 2:30 PM ET settlements, so prop mode sells then.
@@ -21,7 +21,7 @@
 //     of the exit day.
 //
 // Costs: $0.62 commission per contract per side plus 1 tick of slippage, as in the Python
-// backtest. Reference trades: pine/rsi2_{mes,mnq,m2k,mgc,mcl}_reference_trades.csv
+// backtest. Reference trades: pine/rsi2_{mes,mnq,m2k,mym,mgc,mcl}_reference_trades.csv
 // (python -m examples.rsi2_trade_list).
 // Backtesting research, not financial advice.
 
@@ -43,15 +43,15 @@ useTrend   = input.bool(true, "Only buy above the trend average", group = "Rules
 trendLen   = input.int(200, "Trend average (days)", minval = 1, group = "Rules")
 exitLen    = input.int(5, "Exit average (days)", minval = 1, group = "Rules")
 qtyIn      = input.int(0, "Contracts (0 = tested size)", minval = 0,
-  tooltip = "0 uses the size tested for a $50k evaluation with a $2,000 trailing drawdown: 2 MES, 1 MNQ, 3 M2K, 1 MGC, 1 MCL (2 on anything else).")
+  tooltip = "0 uses the size tested for a $50k evaluation with a $2,000 trailing drawdown: 2 MES, 1 MNQ, 3 M2K, 3 MYM, 1 MGC, 1 MCL (2 on anything else).")
 startTime  = input.time(timestamp("2019-01-01T00:00:00"), "Take signals from", group = "Backtest")
 showPanel  = input.bool(true, "Show status panel", group = "Display")
 
 isProp = mode == MODE_PROP
 root   = syminfo.root
-qty    = qtyIn > 0 ? qtyIn : root == "MNQ" or root == "MGC" or root == "MCL" ? 1 : root == "M2K" ? 3 : 2
+qty    = qtyIn > 0 ? qtyIn : root == "MNQ" or root == "MGC" or root == "MCL" ? 1 : root == "M2K" or root == "MYM" ? 3 : 2
 sizeTxt = str.tostring(qty) + " " + root
-evidence = root == "MES" ? "strong (p = 0.003)" : root == "MNQ" ? "weaker (p = 0.16)" : root == "M2K" ? "weak (p = 0.08)" : root == "MGC" ? "no edge found (p = 0.43)" : root == "MCL" ? "no edge, lost money (p = 0.41)" : "not tested"
+evidence = root == "MES" ? "strong (p = 0.003)" : root == "MNQ" ? "weaker (p = 0.16)" : root == "M2K" ? "weak (p = 0.08)" : root == "MYM" ? "weaker (p = 0.06)" : root == "MGC" ? "no edge found (p = 0.43)" : root == "MCL" ? "no edge, lost money (p = 0.41)" : "not tested"
 
 // ---------- Signal ----------
 r       = ta.rsi(close, rsiLen)
