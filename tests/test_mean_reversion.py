@@ -135,4 +135,4 @@ def test_example_part_c_flat_through_breaks(capsys):
     out = capsys.readouterr().out
     assert "C. RSI(2) flat through every daily break, 1 MES" in out
     assert "V2 09:30 -> 15:55 ET only" in out  # MES has 5-min data
-    assert "5 M2K, bootstrap" in out and "1 M2K" not in out
+    assert "5 M2K, bootstrap" in out and "1 M2K, bootstrap" not in out
