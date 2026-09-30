@@ -192,3 +192,40 @@ robustness grid and a prop evaluation against the zero-edge baseline:
 python -m examples.orb_narrow_range
 python -m examples.orb_narrow_range --k 0.8 --lookback 10
 ```
+
+## Mean reversion on MES (`examples/mes_mean_reversion.py`)
+
+`hmm_trader/mean_reversion.py` has two rule sets, both fixed in advance:
+
+- **Daily RSI(2)** (`rsi2_positions`, Connors & Alvarez 2008): buy at the close
+  when RSI(2) < 10 and the close is above its 200-day average (`trend=None`
+  drops the filter), sell at the first close above the 5-day average. Long
+  only; holds overnight.
+- **Intraday Bollinger fade** (`bollinger_fade`): fade a 5-minute close outside
+  the 20-bar +/- 2 sd band at the next open, stop 2 sd away, exit on a close back
+  through the average or at 15:55 ET; flat every night.
+
+```bash
+python -m examples.mes_mean_reversion                 # both parts
+python -m examples.mes_mean_reversion --part a --horizon 250
+python -m examples.mes_mean_reversion --part a --symbols MES,MNQ,M2K
+python -m examples.mes_mean_reversion --part c --symbols MES,MNQ,M2K   # flat through breaks
+python -m examples.mes_mean_reversion --part c --contracts 1,2,3,4,5,6,8 --horizon 250
+python -m examples.mes_mean_reversion --part d --contracts 1,2,3,4,5,6,8 --horizon 250  # stops
+python -m examples.mes_mean_reversion --part e --contracts 2,3,4,5,6 --horizon 250  # daily loss limit
+```
+
+Part C re-runs the RSI(2) signals for prop firms that require being flat through
+the daily maintenance break: each held session is bought at its open and sold at
+its close (a round trip every session), and, where 5-minute data exists, only
+09:30-15:55 ET on the same days. Part D adds a stop k x ATR(10) below the first
+entry (`flat_session_trades(..., stop_atr=k)`) for k = none / 1.5 / 2 / 3. Part E adds
+an account daily loss limit of none / $1,000 / $750 / $500 (`session_stop`, in points
+per contract): the position is sold when the session's loss from its open reaches
+it, and resumes at the next open while the signal lasts. Part A runs on any symbol with bundled daily data (MES, MNQ and
+`examples/data/m2k_daily.csv`, TradingView `M2K1!`/`M2K2!` 2019-05 to 2026-09;
+M2K's continuous series rolls one session later than MES/MNQ, set per contract in
+`ContractSpec.roll_sessions`). The example reports the RSI(2) trades against randomly timed trades of the same
+lengths (so the long bias of a rising market does not count as skill), a
+next-open entry variant, an entry x exit sensitivity grid, the fade in R by
+period and before costs, and prop pass rates against a zero-edge baseline.

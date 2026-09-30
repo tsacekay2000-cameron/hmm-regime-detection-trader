@@ -86,3 +86,14 @@ def test_load_bars_validates(tmp_path):
                  "2024-01-02,1,1,1,1,1\n")
     with pytest.raises(ValueError, match="increasing"):
         fu.load_bars(p)
+
+
+def test_m2k_rolls_one_session_later():
+    assert fu.CONTRACTS["M2K"].roll_sessions == 2
+    assert fu.CONTRACTS["MES"].roll_sessions == 3
+    b = fu.load_bars(fu.Path(__file__).parents[1] / "examples" / "data" / "m2k_daily.csv")
+    mask = fu.quarterly_roll_mask(b.dates, fu.CONTRACTS["M2K"].roll_sessions)
+    assert mask.sum() == 30
+    # Wednesday of expiry week; Tuesday when Juneteenth falls in it (checked vs RUT)
+    for d in ("2024-12-18", "2025-06-17", "2026-06-16", "2026-09-16"):
+        assert d in b.dates[mask]

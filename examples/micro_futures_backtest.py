@@ -60,7 +60,7 @@ def session_steps(
     ``in_market`` covers sessions 1..n-1. Costs are charged on step 0 (before
     the session's price moves), so they count against breach checks.
     """
-    roll = fu.quarterly_roll_mask(bars.dates)
+    roll = fu.quarterly_roll_mask(bars.dates, spec.roll_sessions)
     steps = fu.intraday_long_steps(bars, roll, overnight) * spec.multiplier
     held = in_market.astype(float)
     steps *= held[:, None]
