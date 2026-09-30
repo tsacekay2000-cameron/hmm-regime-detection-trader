@@ -153,6 +153,7 @@ def simulate_challenge(
     paths: np.ndarray,
     rules: ChallengeRules,
     leverage: float = 1.0,
+    compounding: bool = True,
 ) -> ChallengeResult:
     """Run each return path through the challenge rules.
 
@@ -160,6 +161,10 @@ def simulate_challenge(
     ``(n_sims, n_days, steps_per_day)`` for intraday returns. ``leverage``
     scales every return, so sweeping it shows how position size trades off
     pass rate against blow-ups.
+
+    With ``compounding=False`` each value is P&L as a fraction of the initial
+    balance and simply adds up, which is right for a fixed number of futures
+    contracts (e.g. $150 on a $50,000 account is ``0.003``).
 
     Breaches are checked after every step, using the equity at that step (a
     step that gaps through the floor still fails). The profit target, minimum
@@ -175,7 +180,9 @@ def simulate_challenge(
         raise ValueError("paths must be finite")
     if leverage <= 0:
         raise ValueError("leverage must be positive")
-    paths = np.maximum(paths * leverage, -1.0)
+    paths = paths * leverage
+    if compounding:
+        paths = np.maximum(paths, -1.0)
 
     n_sims, n_days, _ = paths.shape
     if rules.max_days is not None:
@@ -204,7 +211,8 @@ def simulate_challenge(
         day_start = equity.copy()
         traded = np.zeros(n_sims, dtype=bool)
         for r in paths[:, d].T:
-            equity = np.where(active, equity * (1.0 + r), equity)
+            step = equity * r if compounding else r
+            equity = np.where(active, equity + step, equity)
             traded |= active & (r != 0)
             if rules.drawdown_type == "trailing":
                 peak = np.where(active, np.maximum(peak, equity), peak)
