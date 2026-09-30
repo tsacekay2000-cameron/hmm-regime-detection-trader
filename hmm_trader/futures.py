@@ -24,6 +24,7 @@ class ContractSpec:
     symbol: str
     multiplier: float  # dollars per point
     tick: float        # minimum price increment, in points
+    roll_sessions: int = 3  # TradingView "1!" switches this many sessions before expiry
 
     @property
     def tick_value(self) -> float:
@@ -33,7 +34,7 @@ class ContractSpec:
 CONTRACTS = {
     "MES": ContractSpec("MES", multiplier=5.0, tick=0.25),   # Micro E-mini S&P 500
     "MNQ": ContractSpec("MNQ", multiplier=2.0, tick=0.25),   # Micro E-mini Nasdaq-100
-    "M2K": ContractSpec("M2K", multiplier=5.0, tick=0.10),   # Micro E-mini Russell 2000
+    "M2K": ContractSpec("M2K", multiplier=5.0, tick=0.10, roll_sessions=2),  # Micro Russell
     "MYM": ContractSpec("MYM", multiplier=0.5, tick=1.0),    # Micro E-mini Dow
     "MGC": ContractSpec("MGC", multiplier=10.0, tick=0.10),  # Micro Gold, $10/oz
     "MCL": ContractSpec("MCL", multiplier=100.0, tick=0.01),  # Micro WTI Crude, $100/bbl
@@ -92,9 +93,10 @@ def quarterly_expiries(years: Sequence[int]) -> list[dt.date]:
 def quarterly_roll_mask(dates: Sequence[str], sessions_before_expiry: int = 3) -> np.ndarray:
     """True on the first session traded in the new contract.
 
-    The default matches TradingView's continuous ``1!`` series for CME equity
-    index futures, which switches ``sessions_before_expiry`` sessions before
-    the expiry session (checked against the cash index from 2019 to 2026).
+    The default matches TradingView's continuous ``1!`` series for MES/MNQ,
+    which switches ``sessions_before_expiry`` sessions before the expiry
+    session; M2K switches one session later (``ContractSpec.roll_sessions``).
+    Both checked against the cash indexes from 2019 to 2026.
     If the data ends before an expiry, the sessions still to come are assumed
     to be weekdays other than Juneteenth.
     """

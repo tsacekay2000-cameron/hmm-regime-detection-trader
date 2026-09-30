@@ -109,3 +109,13 @@ def test_example_runs(capsys):
     out = capsys.readouterr().out
     assert "A. Daily RSI(2)" in out and "timing test" in out
     assert "B. Intraday fade 20 bars / 2 sd" in out and "Sensitivity" in out
+
+
+def test_example_part_a_other_symbols(capsys):
+    from examples import mes_mean_reversion as ex
+    ex.main(["--part", "a", "--symbols", "MNQ,M2K", "--perms", "20", "--sims", "50",
+             "--horizon", "60"])
+    out = capsys.readouterr().out
+    assert "1 MNQ," in out and "1 M2K," in out
+    with pytest.raises(SystemExit):
+        ex.main(["--part", "a", "--symbols", "XYZ"])

@@ -208,9 +208,13 @@ python -m examples.orb_narrow_range --k 0.8 --lookback 10
 ```bash
 python -m examples.mes_mean_reversion                 # both parts
 python -m examples.mes_mean_reversion --part a --horizon 250
+python -m examples.mes_mean_reversion --part a --symbols MES,MNQ,M2K
 ```
 
-The example reports the RSI(2) trades against randomly timed trades of the same
+Part A runs on any symbol with bundled daily data (MES, MNQ and
+`examples/data/m2k_daily.csv`, TradingView `M2K1!`/`M2K2!` 2019-05 to 2026-09;
+M2K's continuous series rolls one session later than MES/MNQ, set per contract in
+`ContractSpec.roll_sessions`). The example reports the RSI(2) trades against randomly timed trades of the same
 lengths (so the long bias of a rising market does not count as skill), a
 next-open entry variant, an entry x exit sensitivity grid, the fade in R by
 period and before costs, and prop pass rates against a zero-edge baseline.
