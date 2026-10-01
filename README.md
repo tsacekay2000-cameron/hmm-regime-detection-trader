@@ -355,6 +355,12 @@ bootstrap evaluations at 1 MNQ against 20% with no edge (52% of historical
 start days), but it failed on MES and its flip p of 0.10 is not significant
 over two years: a lead to watch, not a proven edge.
 
+`pine/noise_boundary.pine` is the TradingView version for a 5-minute `MNQ1!`
+chart: the same bands, checks, VWAP exit and 16:00 close, with a status panel
+(position, bands, VWAP, the next check and its levels, today's P&L) and alerts.
+`python -m examples.intraday_momentum --write-trades` writes the backtest's
+trades to `pine/noise_boundary_<symbol>_reference_trades.csv` for comparison.
+
 ## Trend following on MES (`examples/mes_trend.py`)
 
 `hmm_trader/trend.py` has three textbook rules on roll-adjusted daily closes,

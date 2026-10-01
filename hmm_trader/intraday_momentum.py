@@ -198,3 +198,41 @@ def flip_test(pnl_gross: np.ndarray, rng: np.random.Generator, n: int = 20000) -
     x = pnl_gross[traded]
     signs = rng.choice((-1.0, 1.0), size=(n, x.size))
     return float(np.mean((signs * x).sum(axis=1) >= x.sum()))
+
+
+def trade_list(b: DayBars, pos: np.ndarray, multiplier: float, tick: float,
+               commission: float = 0.62) -> list[tuple]:
+    """One row per trade: (date, side, entry time, entry fill, exit time, exit fill, dollars).
+
+    Fills include one tick of slippage; a position changed at bar ``i`` fills at
+    its open (time of bar ``i``), and the last position of the day exits at the
+    16:00 close. Dollars are per ``pos`` contracts after commission, and sum
+    to ``simulate_positions(...).pnl``.
+    """
+    def hhmm(i):
+        m = OPEN_MIN + i * BAR
+        return f"{m // 60:02d}:{m % 60:02d}"
+
+    rows = []
+    for d in range(pos.shape[0]):
+        p = np.r_[0.0, pos[d], 0.0]
+        i = 0
+        while i < BARS_PER_DAY:
+            q = p[i + 1]
+            if q != 0 and q != p[i]:
+                j = i + 1
+                while j < BARS_PER_DAY and p[j + 1] == q:
+                    j += 1
+                entry = b.open[d, i] + np.sign(q) * tick
+                if j < BARS_PER_DAY:
+                    exit_px, exit_t = b.open[d, j] - np.sign(q) * tick, hhmm(j)
+                else:
+                    exit_px, exit_t = b.close[d, -1] - np.sign(q) * tick, "16:00"
+                dollars = q * (exit_px - entry) * multiplier - 2 * abs(q) * commission
+                rows.append((str(b.date[d]), "long" if q > 0 else "short", hhmm(i),
+                             round(float(entry), 2), exit_t, round(float(exit_px), 2),
+                             round(float(dollars), 2)))
+                i = j
+            else:
+                i += 1
+    return rows

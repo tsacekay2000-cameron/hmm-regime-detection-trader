@@ -23,6 +23,7 @@ with the same days' P&L with the average profit removed.
 from __future__ import annotations
 
 import argparse
+import csv
 from pathlib import Path
 from typing import Optional
 
@@ -66,6 +67,8 @@ def main(argv: Optional[list[str]] = None) -> None:
     ap.add_argument("--horizon", type=int, default=250)
     ap.add_argument("--flips", type=int, default=20000)
     ap.add_argument("--seed", type=int, default=1)
+    ap.add_argument("--write-trades", action="store_true",
+                    help="write pine/noise_boundary_<symbol>_reference_trades.csv")
     args = ap.parse_args(argv)
 
     for symbol in args.symbols.upper().split(","):
@@ -73,6 +76,17 @@ def main(argv: Optional[list[str]] = None) -> None:
         b = im.load_day_bars(DATA_DIR / f"{symbol.lower()}_5min_rth.csv.gz")
         rng = np.random.default_rng(args.seed)
         first = b.date < SPLIT
+
+        if args.write_trades:
+            out = Path(__file__).parents[1] / "pine" / f"noise_boundary_{symbol.lower()}_reference_trades.csv"
+            rows = im.trade_list(b, im.noise_boundary_positions(b), spec.multiplier, spec.tick)
+            with open(out, "w", newline="") as fh:
+                w = csv.writer(fh)
+                w.writerow(["date", "side", "entry_time_et", "entry_fill", "exit_time_et",
+                            "exit_fill", "pnl_1_contract"])
+                w.writerows(rows)
+            print(f"{symbol}: {len(rows)} noise-boundary trades, "
+                  f"{sum(r[6] for r in rows):+,.0f} -> {out.relative_to(out.parents[1])}")
 
         def run(pos):
             net = im.simulate_positions(b, pos, spec.multiplier, spec.tick)

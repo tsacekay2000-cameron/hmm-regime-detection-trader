@@ -77,3 +77,24 @@ def test_bundled_data_and_example(capsys):
              "--contracts", "1"])
     out = capsys.readouterr().out
     assert "noise boundary" in out and "Sensitivity" in out and "Prop evaluation" in out
+
+
+def test_trade_list_matches_simulator_and_reference_csv():
+    import csv
+    from hmm_trader import futures as fu
+    root = Path(__file__).parents[1]
+    b = im.load_day_bars(root / "examples" / "data" / "mnq_5min_rth.csv.gz")
+    spec = fu.CONTRACTS["MNQ"]
+    pos = im.noise_boundary_positions(b)
+    rows = im.trade_list(b, pos, spec.multiplier, spec.tick)
+    net = im.simulate_positions(b, pos, spec.multiplier, spec.tick)
+    assert len(rows) == net.trades.sum() == 380
+    assert sum(r[6] for r in rows) == pytest.approx(net.pnl.sum(), abs=0.01)
+    with open(root / "pine" / "noise_boundary_mnq_reference_trades.csv") as fh:
+        saved = list(csv.DictReader(fh))
+    assert [(r["date"], r["side"], r["entry_time_et"]) for r in saved] == [r[:3] for r in rows]
+    src = (root / "pine" / "noise_boundary.pine").read_text()
+    for snippet in ("//@version=6", 'input.int(14, "Noise lookback (sessions)"',
+                    'input.int(30, "Check every (minutes)"', "commission_value = 0.62",
+                    "slippage = 1", "margin_long = 10", "math.max(upper, vw)", "math.min(lower, vw)"):
+        assert snippet in src
