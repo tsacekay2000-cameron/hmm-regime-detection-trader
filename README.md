@@ -404,6 +404,40 @@ position, the order, the nearest liquidity and any open sweep, plus alerts. Its
 `python -m examples.smc_backtest --write-trades` writes the backtest's trades to
 `pine/smc_1r_<symbol>_reference_trades.csv`.
 
+## Intraday mean reversion: VWAP, gaps, RSI(2) (`examples/intraday_mean_reversion.py`)
+
+`hmm_trader/intraday_mr.py` has three intraday rules on the 5-minute bars,
+fixed before testing (1 contract, after costs, MES primary and MNQ as the
+check):
+
+- **VWAP reversion**: fade a close beyond VWAP +/- 2 volume-weighted standard
+  deviations between 10:00 and 15:00. Exit back at VWAP, beyond 3 SD, or when
+  the day breaks its noise-boundary bands (a trend day). Entries are allowed
+  only while the bands are unbroken.
+- **Gaps**: fade small gaps (< 0.3x the 14-day average range) toward the
+  previous close, with the stop 0.5x range away. Follow large gaps (>= 0.6x),
+  with the stop at the previous close.
+- **RSI(2) on 15-minute bars**: Connors' rule, long and short, flat at 16:00.
+
+```bash
+python -m examples.intraday_mean_reversion            # MES and MNQ, 2024-10 .. 2026-09
+```
+
+| Net $ (1 contract) | MES | MNQ |
+|---|---|---|
+| VWAP reversion, 2 SD + range filter | -2,200 | +2,451 (p 0.17) |
+| VWAP reversion, no range filter | -6,836 | -5,501 |
+| Fade small gaps (avg R, win rate) | -0.01R, 77% | -0.01R, 74% |
+| Follow large gaps | -2,653 | -4,649 |
+| RSI(2), 15-minute bars | -4,840 | -2,910 |
+
+None works on MES. Gap fades win three times in four but average zero: a
+few stopped-out losses cancel the small wins. The range-day filter is the one
+consistent finding: on both markets it cut VWAP-reversion losses by $4,600 to
+$8,000, so fading stretches costs most on trend days. With the filter, MNQ
+made money (+$2,451, positive in year 1, slightly negative in year 2), which
+is not significant.
+
 ## Trend following on MES (`examples/mes_trend.py`)
 
 `hmm_trader/trend.py` has three textbook rules on roll-adjusted daily closes,
