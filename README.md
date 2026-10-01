@@ -361,6 +361,49 @@ chart: the same bands, checks, VWAP exit and 16:00 close, with a status panel
 `python -m examples.intraday_momentum --write-trades` writes the backtest's
 trades to `pine/noise_boundary_<symbol>_reference_trades.csv` for comparison.
 
+## Smart-money setups: sweeps, fair value gaps, order blocks (`examples/smc_backtest.py`)
+
+`hmm_trader/smc.py` turns the discretionary "smart money" ideas into fixed
+rules on 5-minute regular-hours bars:
+
+- **Liquidity levels:** the previous session's high/low and today's swing points.
+- **Sweep:** a bar trades through an untouched level and closes back inside.
+- **Fair value gap:** a 3-bar gap; for a bullish gap, bar 3's low is above bar 1's high.
+- **Order block (supply/demand zone):** the last opposite bar before the displacement bar.
+- **Order flow:** proxied by the displacement bar's volume against normal volume at that time of day. There is no bid/ask data, so there is no true delta.
+
+The full model is a sweep, then within 30 minutes a gap the other way on
+>= 1.5x volume, then a limit order at the gap's edge. The order fills only if
+price trades through it, the stop goes beyond the sweep, and the target is 2R.
+The position is flat at 16:00, with $200 risk per trade. The other variants
+drop or swap one piece. The side test enters each trade and its mirror image
+at the next bar's open, so the shape of the fill bar does not favour either
+side.
+
+```bash
+python -m examples.smc_backtest                     # MES and MNQ, 2024-10 .. 2026-09
+```
+
+| avg R after costs (trades) | MES | MNQ |
+|---|---|---|
+| Full model | +0.06 (117) | -0.05 (84) |
+| No volume filter | -0.03 (393) | +0.10 (431) |
+| FVG only (no sweep) | +0.02 (454) | +0.01 (392) |
+| Order block entry | -0.02 (71) | -0.18 (55) |
+| Sweep only (fade every sweep) | **-0.27 (843)** | **-0.14 (887)** |
+| Full, 1R target | +0.17 (120) | -0.03 (84) |
+
+- **No setup is consistently positive on both markets.** The full model is within noise on both.
+- **Fading every sweep loses clearly.** Swept levels more often keep going than reverse.
+- **The 1R version on MES** (side p 0.04) is one cell of 14 and failed on MNQ, so it is what chance alone could produce.
+
+`pine/smc_sweep_fvg.pine` is that 1R version for a 5-minute `MES1!` chart in
+TradingView. It finds the same sweeps, gaps and volume filter, places the limit
+order with its bracket stop and target, and shows a status panel with the
+position, the order, the nearest liquidity and any open sweep, plus alerts. Its
+`python -m examples.smc_backtest --write-trades` writes the backtest's trades to
+`pine/smc_1r_<symbol>_reference_trades.csv`.
+
 ## Trend following on MES (`examples/mes_trend.py`)
 
 `hmm_trader/trend.py` has three textbook rules on roll-adjusted daily closes,
