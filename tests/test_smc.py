@@ -105,3 +105,23 @@ def test_example_runs(capsys):
     ex.main(["--symbols", "MES", "--sims", "100", "--horizon", "60", "--risk", "200"])
     out = capsys.readouterr().out
     assert "sweep only" in out and "Prop evaluation" in out
+
+
+def test_reference_trades_and_pine_defaults():
+    import csv
+    from pathlib import Path
+    from hmm_trader import futures as fu
+    root = Path(__file__).parents[1]
+    b = im.load_day_bars(root / "examples" / "data" / "mes_5min_rth.csv.gz")
+    spec = fu.CONTRACTS["MES"]
+    tr = smc.backtest(b, spec.multiplier, spec.tick, smc.variants()["full, 1R target"])
+    with open(root / "pine" / "smc_1r_mes_reference_trades.csv") as fh:
+        saved = list(csv.DictReader(fh))
+    assert len(saved) == len(tr) == 120
+    assert sum(float(r["pnl"]) for r in saved) == pytest.approx(sum(t.pnl for t in tr), abs=0.05)
+    src = (root / "pine" / "smc_sweep_fvg.pine").read_text()
+    for snippet in ("//@version=6", 'input.float(200, "Risk per trade ($)"', 'input.float(1.0, "Target (R multiple)"',
+                    'input.float(1.5, "Min. relative volume', 'input.int(6, "Gap must form within',
+                    'input.int(12, "Limit order valid for', "RVOL_DAYS = 20", "commission_value = 0.62",
+                    "slippage = 1", "margin_long = 10"):
+        assert snippet in src

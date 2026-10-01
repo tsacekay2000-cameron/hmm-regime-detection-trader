@@ -21,6 +21,7 @@ bootstrap pass rates with the same days' P&L with the average removed.
 from __future__ import annotations
 
 import argparse
+import csv
 from dataclasses import replace
 from pathlib import Path
 from typing import Optional
@@ -38,6 +39,26 @@ DATA_DIR = Path(__file__).parent / "data"
 SPLIT = "2025-10-01"
 
 
+def write_trades(b: im.DayBars, symbol: str, spec) -> None:
+    """The full model with a 1R target, one row per trade, for pine/smc_sweep_fvg.pine."""
+    p = smc.variants()["full, 1R target"]
+    rows = []
+    for t in smc.backtest(b, spec.multiplier, spec.tick, p):
+        hhmm = lambda i: f"{(570 + 5 * i) // 60:02d}:{(570 + 5 * i) % 60:02d}"
+        rows.append((b.date[t.day], "long" if t.side > 0 else "short", hhmm(t.fill_bar),
+                     t.entry, t.stop, round(t.target, 2), t.contracts,
+                     "16:00" if t.reason == "close" else hhmm(t.exit_bar), round(t.exit_price, 2),
+                     t.reason, round(t.pnl, 2)))
+    out = Path(__file__).parents[1] / "pine" / f"smc_1r_{symbol.lower()}_reference_trades.csv"
+    with open(out, "w", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(["date", "side", "fill_bar_et", "entry", "stop", "target", "contracts",
+                    "exit_bar_et", "exit_price", "reason", "pnl"])
+        w.writerows(rows)
+    print(f"{symbol}: {len(rows)} trades, {sum(r[-1] for r in rows):+,.0f} -> "
+          f"{out.relative_to(out.parents[1])}")
+
+
 def main(argv: Optional[list[str]] = None) -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--symbols", default="MES,MNQ")
@@ -46,12 +67,16 @@ def main(argv: Optional[list[str]] = None) -> None:
     ap.add_argument("--sims", type=int, default=5000)
     ap.add_argument("--horizon", type=int, default=250)
     ap.add_argument("--seed", type=int, default=1)
+    ap.add_argument("--write-trades", action="store_true",
+                    help="write pine/smc_1r_<symbol>_reference_trades.csv (full model, 1R target)")
     args = ap.parse_args(argv)
 
     for symbol in args.symbols.upper().split(","):
         spec = fu.CONTRACTS[symbol]
         b = im.load_day_bars(DATA_DIR / f"{symbol.lower()}_5min_rth.csv.gz")
         rng = np.random.default_rng(args.seed)
+        if args.write_trades:
+            write_trades(b, symbol, spec)
         print(f"\n== {symbol}: {b.date[0]} .. {b.date[-1]}, {b.date.size} full sessions, "
               f"$200 risk per trade, after costs ==")
         print(f"  {'':<24}{'trades':>7}{'win':>6}{'avg R':>8}{'± se':>7}{'net $':>9}"
