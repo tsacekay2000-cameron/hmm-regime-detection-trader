@@ -1,0 +1,198 @@
+// Noise boundary + VWAP intraday momentum (hmm-regime-detection-trader, hmm_trader/intraday_momentum.py).
+// After Zarattini, Aziz & Barbon, "Beat the Market: An Effective Intraday Momentum Strategy for
+// S&P500 ETF (SPY)" (2024), with its published settings and a fixed number of contracts.
+// Use on a 5-MINUTE chart of MNQ1! (back-adjustment "B-ADJ" on). Regular hours, US Eastern time.
+//
+// Rules:
+//   - Noise band: for each 5-minute bar of the day, the average absolute move from the 09:30 open
+//     at that time over the previous 14 full sessions. Upper = max(open, previous close) x
+//     (1 + band), lower = min(open, previous close) x (1 - band).
+//   - Every 30 minutes from 10:00 to 15:30 (on the bar closing at that time): go long above the
+//     upper band, short below the lower band. A long exits on a close below max(upper, VWAP), a
+//     short on a close above min(lower, VWAP). Orders fill at the next bar's open.
+//   - Everything is closed at the 16:00 close. VWAP is regular-hours only, from 09:30.
+//
+// Backtest (Python, 2024-10 to 2026-09, 1 MNQ after $0.62 + 1 tick per side): +$6,567, 380 trades,
+// profitable in 7 of 8 quarters; a coin-flip test of its long/short choices gave p = 0.10, and the
+// same rule lost money on MES. Treat it as a lead, not a proven edge. Reference trades to compare:
+// pine/noise_boundary_mnq_reference_trades.csv (python -m examples.intraday_momentum --write-trades).
+// TradingView keeps a limited number of 5-minute bars, so the Strategy Tester covers less history
+// than the Python test unless the chart is set to regular hours or deep backtesting is used.
+// Backtesting research, not financial advice.
+
+//@version=6
+// margin_long = 10: futures need only a margin deposit, not the contracts' full value.
+strategy("Noise Boundary + VWAP", shorttitle = "NoiseBnd", overlay = true,
+  initial_capital = 50000, currency = currency.USD,
+  default_qty_type = strategy.fixed, default_qty_value = 1,
+  commission_type = strategy.commission.cash_per_contract, commission_value = 0.62,
+  slippage = 1, pyramiding = 0, process_orders_on_close = false,
+  margin_long = 10, margin_short = 10)
+
+// ---------- Inputs ----------
+lookback    = input.int(14, "Noise lookback (sessions)", minval = 1)
+every       = input.int(30, "Check every (minutes)", options = [15, 30, 60])
+qty         = input.int(1, "Contracts", minval = 1)
+showPanel   = input.bool(true, "Show status panel", group = "Display")
+showLevels  = input.bool(true, "Show today's bands and VWAP (latest values)", group = "Display")
+showHistory = input.bool(false, "Draw bands and VWAP through the day", group = "Display")
+
+// ---------- Session clock (US Eastern, regular hours 09:30-16:00) ----------
+TZ   = "America/New_York"
+N    = 78                                  // 5-minute bars from 09:30 to 15:55
+mins = hour(time, TZ) * 60 + minute(time, TZ)
+idx  = int(math.floor((mins - 570) / 5.0)) // bar of the session, 0 = 09:30
+is5m = timeframe.isintraday and timeframe.multiplier == 5
+inRth = is5m and mins >= 570 and mins < 960
+
+// ---------- Daily state ----------
+var float dayOpen      = na
+var float prevClose    = na
+var float lastRthClose = na
+var float cumPV        = 0.0
+var float cumV         = 0.0
+var int   barsToday    = 0
+var int   held         = 0
+var float dayStartNet  = 0.0
+var array<float> today = array.new_float(N, na)
+var array<float> hist  = array.new_float(0)   // last `lookback` full sessions, N values each
+
+if inRth and idx == 0
+    // a shortened session leaves no 16:00 bar: close anything still open here
+    if strategy.position_size != 0
+        strategy.close_all(comment = "Session end", immediately = true)
+    prevClose   := lastRthClose
+    dayOpen     := open
+    cumPV       := 0.0
+    cumV        := 0.0
+    barsToday   := 0
+    held        := 0
+    dayStartNet := strategy.netprofit
+    array.fill(today, na)
+
+// average move from the open at bar k over the stored sessions
+bandAt(int k) =>
+    float s = 0.0
+    int days = int(math.floor(array.size(hist) / N))
+    if days > 0
+        for d = 0 to days - 1
+            s += array.get(hist, d * N + k)
+    days >= lookback ? s / days : na
+
+float upper = na
+float lower = na
+float vw    = na
+if inRth and not na(dayOpen)
+    barsToday += 1
+    array.set(today, idx, math.abs(close / dayOpen - 1))
+    cumPV += hlc3 * volume
+    cumV  += volume
+    lastRthClose := close
+    sig = bandAt(idx)
+    base = nz(prevClose, dayOpen)
+    upper := math.max(dayOpen, base) * (1 + sig)
+    lower := math.min(dayOpen, base) * (1 - sig)
+    vw    := cumV > 0 ? cumPV / cumV : close
+
+// ---------- Decisions at the checkpoints ----------
+barEnd  = idx + 1                                     // bars completed after this one closes
+stepB   = int(math.floor(every / 5))
+isCheck = inRth and barEnd >= 6 and barEnd <= 72 and (barEnd - 6) % stepB == 0
+string action = ""
+if isCheck and not na(upper)
+    int was = held
+    if held > 0 and close < math.max(upper, vw)
+        held := 0
+    else if held < 0 and close > math.min(lower, vw)
+        held := 0
+    if held == 0
+        held := close > upper ? 1 : close < lower ? -1 : 0
+    if held != was
+        action := held > 0 ? "BUY" : held < 0 ? "SELL SHORT" : "EXIT"
+    if held > 0
+        strategy.entry("Long", strategy.long, qty = qty)
+    else if held < 0
+        strategy.entry("Short", strategy.short, qty = qty)
+    else if strategy.position_size != 0
+        strategy.close_all(comment = "Exit")
+
+// close everything at 16:00, and at the end of a shortened session
+if inRth and idx == N - 1
+    held := 0
+    strategy.close_all(comment = "16:00 close", immediately = true)
+else if not inRth and strategy.position_size != 0
+    held := 0
+    strategy.close_all(comment = "Session end", immediately = true)
+
+// store today's moves once the full session is in
+if inRth and idx == N - 1 and barsToday == N
+    for k = 0 to N - 1
+        array.push(hist, array.get(today, k))
+    while array.size(hist) > lookback * N
+        array.shift(hist)
+
+// ---------- Alerts (create one with "alert() function calls only") ----------
+if action != ""
+    alert("NOISE BOUNDARY " + syminfo.ticker + ": " + action + (action == "EXIT" ? "" : " " + str.tostring(qty)) +
+      " at the next bar's open. Close " + str.tostring(close, format.mintick) + ", upper " +
+      str.tostring(upper, format.mintick) + ", lower " + str.tostring(lower, format.mintick) +
+      ", VWAP " + str.tostring(vw, format.mintick) + ".", alert.freq_once_per_bar_close)
+
+// ---------- Plots ----------
+plot(showHistory ? upper : na, "Upper band (history)", color = color.new(#3DDC97, 30), style = plot.style_linebr)
+plot(showHistory ? lower : na, "Lower band (history)", color = color.new(#FF6B6B, 30), style = plot.style_linebr)
+plot(showHistory ? vw : na, "VWAP (history)", color = color.new(#FF9F43, 30), style = plot.style_linebr)
+// latest values only: one line each across the chart, with the price on the price axis
+plot(showLevels ? upper : na, "Upper band", color = #3DDC97, linewidth = 2, trackprice = true, show_last = 1, display = display.pane + display.price_scale)
+plot(showLevels ? lower : na, "Lower band", color = #FF6B6B, linewidth = 2, trackprice = true, show_last = 1, display = display.pane + display.price_scale)
+plot(showLevels ? vw : na, "VWAP", color = #FF9F43, linewidth = 1, trackprice = true, show_last = 1, display = display.pane + display.price_scale)
+
+// ---------- Status panel ----------
+// Panel colors: a solid dark panel with light text, readable on light and dark chart themes
+PANEL_BG   = #1E222D
+PANEL_TEXT = #F0F3FA
+PANEL_OK   = #3DDC97
+PANEL_BAD  = #FF6B6B
+PANEL_WARN = #FF9F43
+var table panel = table.new(position.top_right, 2, 8, bgcolor = PANEL_BG, frame_color = #434651, frame_width = 1, border_color = #2A2E39, border_width = 1)
+// the last confirmed bar: this strategy only runs when a bar closes, so it never sees the open one
+if showPanel and bar_index >= last_bar_index - 1
+    // the next checkpoint and its bands (the band for that time is already known)
+    int nextEnd = na
+    int fromEnd = math.max(barEnd + 1, 6)
+    if inRth and fromEnd <= 72
+        for e = fromEnd to 72
+            if (e - 6) % stepB == 0
+                nextEnd := e
+                break
+    float nUp = na
+    float nLo = na
+    if not na(nextEnd) and not na(dayOpen)
+        nsig = bandAt(nextEnd - 1)
+        nbase = nz(prevClose, dayOpen)
+        nUp := math.max(dayOpen, nbase) * (1 + nsig)
+        nLo := math.min(dayOpen, nbase) * (1 - nsig)
+    string nextTime = "none today"
+    if not na(nextEnd)
+        int tm = 570 + nextEnd * 5
+        nextTime := str.format("{0,number,00}:{1,number,00}", int(math.floor(tm / 60)), tm % 60)
+    string posTxt = held > 0 ? "LONG " + str.tostring(qty) : held < 0 ? "SHORT " + str.tostring(qty) : "FLAT"
+    string planTxt = na(nUp) ? "-" : held > 0 ? "exit if close < " + str.tostring(math.max(nUp, nz(vw, nUp)), format.mintick) + " (band or VWAP)" : held < 0 ? "exit if close > " + str.tostring(math.min(nLo, nz(vw, nLo)), format.mintick) + " (band or VWAP)" : "long > " + str.tostring(nUp, format.mintick) + ", short < " + str.tostring(nLo, format.mintick)
+    float dayPnl = strategy.netprofit - dayStartNet + strategy.openprofit
+    int stored = int(math.floor(array.size(hist) / N))
+    table.cell(panel, 0, 0, "Position", text_halign = text.align_left, text_color = PANEL_TEXT)
+    table.cell(panel, 1, 0, posTxt, text_color = held > 0 ? PANEL_OK : held < 0 ? PANEL_BAD : PANEL_TEXT)
+    table.cell(panel, 0, 1, "Upper / lower band now", text_halign = text.align_left, text_color = PANEL_TEXT)
+    table.cell(panel, 1, 1, na(upper) ? "-" : str.tostring(upper, format.mintick) + " / " + str.tostring(lower, format.mintick), text_color = PANEL_TEXT)
+    table.cell(panel, 0, 2, "VWAP (since 09:30)", text_halign = text.align_left, text_color = PANEL_TEXT)
+    table.cell(panel, 1, 2, na(vw) ? "-" : str.tostring(vw, format.mintick), text_color = PANEL_WARN)
+    table.cell(panel, 0, 3, "Next check", text_halign = text.align_left, text_color = PANEL_TEXT)
+    table.cell(panel, 1, 3, nextTime == "none today" ? nextTime : nextTime + " ET", text_color = PANEL_TEXT)
+    table.cell(panel, 0, 4, "At that check", text_halign = text.align_left, text_color = PANEL_TEXT)
+    table.cell(panel, 1, 4, planTxt, text_color = PANEL_TEXT)
+    table.cell(panel, 0, 5, "Today's P&L", text_halign = text.align_left, text_color = PANEL_TEXT)
+    table.cell(panel, 1, 5, str.tostring(dayPnl, "$#,##0"), text_color = dayPnl >= 0 ? PANEL_OK : PANEL_BAD)
+    table.cell(panel, 0, 6, "Sessions of history", text_halign = text.align_left, text_color = PANEL_TEXT)
+    table.cell(panel, 1, 6, str.tostring(stored) + " of " + str.tostring(lookback) + (stored >= lookback ? "" : " (warming up)"), text_color = stored >= lookback ? PANEL_OK : PANEL_WARN)
+    table.cell(panel, 0, 7, "Chart", text_halign = text.align_left, text_color = PANEL_TEXT)
+    table.cell(panel, 1, 7, is5m ? "5-minute: OK" : "switch to a 5-minute chart", text_color = is5m ? PANEL_OK : PANEL_BAD)

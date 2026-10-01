@@ -321,6 +321,46 @@ evaluation on the chart ($3,000 target, $2,000 end-of-day trailing drawdown,
 250 sessions) and marks the pass or failure. Its header lists the backtest's
 outcomes for several start dates to compare against.
 
+## Intraday momentum on MES / MNQ (`examples/intraday_momentum.py`)
+
+`hmm_trader/intraday_momentum.py` has two published intraday rules on 5-minute
+regular-hours bars, with their published settings:
+
+- **Last half hour** (Gao, Han, Li & Zhou, "Market Intraday Momentum", JFE 2018):
+  the return from the previous close to 10:00 ET sets the side, held 15:30 to
+  16:00. A variant uses the return to 15:30 (Baltussen et al., JFE 2021).
+- **Noise boundary + VWAP** (Zarattini, Aziz & Barbon, "Beat the Market", 2024):
+  14-day noise bands around the open, checks every 30 minutes from 10:00,
+  VWAP trailing exit, flat at 16:00, fixed size instead of volatility sizing.
+
+```bash
+python -m examples.intraday_momentum                 # MES (primary) and MNQ
+```
+
+The 5-minute files now carry `volume` (for VWAP) and `prev_close` (the
+previous regular-hours close of the same contract), from Massive.com; every
+price matched the bars already bundled. Results, 2024-10 to 2026-09, 1
+contract after costs:
+
+| | MES net | MES flip p | MNQ net | MNQ flip p |
+|---|---|---|---|---|
+| Last half hour, 10:00 signal | -1,736 | 0.47 | +817 | 0.24 |
+| Last half hour, 15:30 signal | -4,451 | 0.96 | -5,309 | 0.94 |
+| Noise boundary + VWAP | -2,698 | 0.66 | +6,567 | 0.10 |
+
+On MES, the primary test, neither rule works: the first half hour had no
+relation to the last (correlation -0.03). The noise-boundary rule on MNQ made
+money in 7 of 8 quarters and in every neighbouring setting, and passed 44% of
+bootstrap evaluations at 1 MNQ against 20% with no edge (52% of historical
+start days), but it failed on MES and its flip p of 0.10 is not significant
+over two years: a lead to watch, not a proven edge.
+
+`pine/noise_boundary.pine` is the TradingView version for a 5-minute `MNQ1!`
+chart: the same bands, checks, VWAP exit and 16:00 close, with a status panel
+(position, bands, VWAP, the next check and its levels, today's P&L) and alerts.
+`python -m examples.intraday_momentum --write-trades` writes the backtest's
+trades to `pine/noise_boundary_<symbol>_reference_trades.csv` for comparison.
+
 ## Trend following on MES (`examples/mes_trend.py`)
 
 `hmm_trader/trend.py` has three textbook rules on roll-adjusted daily closes,
