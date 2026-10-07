@@ -121,3 +121,25 @@ def test_rsi2_15m_reference_trades_and_pine_defaults():
                     'input.int(200, "Trend average (bars)"', 'input.int(5, "Exit average (bars)"', "LASTJ = 23",
                     "timeframe.multiplier == 15", "commission_value = 0.62", "slippage = 1", "margin_long = 10"):
         assert snippet in src
+
+
+def test_gap_fade_reference_trades_and_pine_defaults():
+    import csv
+    from pathlib import Path
+    root = Path(__file__).parents[1]
+    expected = {"mes": (5.0, 0.25, 227, -631), "mnq": (2.0, 0.25, 226, -121), "mym": (0.5, 1.0, 243, 293)}
+    for sym, (mult, tick, n, total) in expected.items():
+        b = im.load_day_bars(root / "examples" / "data" / f"{sym}_5min_rth.csv.gz")
+        rows = mr.gap_trade_rows(b, mr.gap_trades(b, mult, tick, "fade"))
+        with open(root / "pine" / f"gap_fade_{sym}_reference_trades.csv") as fh:
+            saved = list(csv.DictReader(fh))
+        assert len(saved) == len(rows) == n
+        assert all(r["entry_time_et"] == "09:30" for r in saved)
+        assert {r["exit_reason"] for r in saved} <= {"target", "stop", "close"}
+        assert sum(float(r["pnl_1_contract"]) for r in saved) == pytest.approx(total, abs=1)
+    src = (root / "pine" / "gap_fade.pine").read_text()
+    for snippet in ("//@version=6", 'input.float(0.3, "Fade gaps smaller than (x average range)"',
+                    'input.float(0.5, "Stop (x average range)"', 'input.int(14, "Average range (sessions)"',
+                    'input.float(0.62, "Commission', 'input.int(1, "Slippage', "LASTJ = 77",
+                    "timeframe.multiplier == 5"):
+        assert snippet in src

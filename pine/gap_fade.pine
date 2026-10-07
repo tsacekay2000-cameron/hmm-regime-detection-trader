@@ -1,0 +1,208 @@
+// Fade small opening gaps (hmm-regime-detection-trader, hmm_trader/intraday_mr.py, gap_trades mode "fade").
+// Use on a 5-MINUTE chart of MYM1!, MES1! or MNQ1! with REGULAR TRADING HOURS only (chart settings:
+// session "Regular trading hours", so the previous bar at 09:30 is yesterday's 16:00 close), back-adjustment
+// "B-ADJ" on. US Eastern time. Alerts name the chart's symbol; add the script and an alert to each chart.
+//
+// Rules (one trade a day, at the 09:30 open):
+//   - Gap = today's open minus yesterday's regular-hours close. Average range = the average high-low
+//     range of the previous 14 full sessions.
+//   - If the gap is smaller than 0.3 x the average range, trade against it at the open: buy a gap down,
+//     short a gap up. Target: yesterday's close. Stop: 0.5 x the average range from the entry.
+//   - Whatever is still open is closed at the 16:00 close.
+//
+// This is an INDICATOR, not a strategy: the trade starts at the open, which a strategy (it decides at bar
+// closes) cannot do without false fills. The script follows each trade itself with the backtest's fills
+// (1 tick of slippage on the entry, stops and the close; the target fills at yesterday's close; $0.62 per
+// contract per side) and shows the totals for the chart's history in the panel.
+//
+// Backtest (Python, 2024-10 to 2026-09, 1 contract): it won about 3 trades in 4 but averaged nothing:
+// MYM +$293 over 243 trades, MES -$631 over 227, MNQ -$121 over 226 (side tests p = 0.33, 0.30, 0.44).
+// The occasional stopped-out loss is bigger than the many small wins. Alerts are for watching only.
+// Reference trades: pine/gap_fade_{mym,mes,mnq}_reference_trades.csv
+// (python -m examples.intraday_mean_reversion --write-trades). Backtesting research, not financial advice.
+
+//@version=6
+indicator("Gap fade (intraday)", shorttitle = "Gap fade", overlay = true)
+
+// ---------- Inputs ----------
+smallGap  = input.float(0.3, "Fade gaps smaller than (x average range)", minval = 0.05, step = 0.05, group = "Rules")
+stopMult  = input.float(0.5, "Stop (x average range)", minval = 0.05, step = 0.05, group = "Rules")
+adrLen    = input.int(14, "Average range (sessions)", minval = 1, group = "Rules")
+qty       = input.int(1, "Contracts", minval = 1)
+comm      = input.float(0.62, "Commission per contract per side ($)", minval = 0, group = "Costs")
+slipTicks = input.int(1, "Slippage (ticks per side)", minval = 0, group = "Costs")
+showPanel  = input.bool(true, "Show status panel", group = "Display")
+showLevels = input.bool(true, "Show the target and stop, and tomorrow's price ranges", group = "Display")
+
+// ---------- Session clock (US Eastern, regular hours 09:30-16:00) ----------
+TZ    = "America/New_York"
+mins  = hour(time, TZ) * 60 + minute(time, TZ)
+j     = int(math.floor((mins - 570) / 5.0))    // 5-minute bar of the session, 0 = 09:30
+is5   = timeframe.isintraday and timeframe.multiplier == 5
+inRth = is5 and mins >= 570 and mins < 960
+LASTJ = 77                                      // the 15:55 bar: closes at 16:00
+var bool ethSeen = false
+if is5 and not inRth
+    ethSeen := true                             // extended-hours bars break "yesterday's close"
+
+tick = syminfo.mintick
+slip = slipTicks * tick
+pv   = syminfo.pointvalue
+
+// ---------- State ----------
+var float[] ranges = array.new_float()          // high-low range of recent full sessions
+var float dayHi = na
+var float dayLo = na
+var float pc    = na                            // yesterday's close
+var float adr   = na                            // average range for today
+var float gapPts = na
+var int   pos   = 0
+var float entry = na
+var float stop  = na
+var float target = na
+var float todayPnl = 0.0
+var int   nTrades = 0
+var int   nWins   = 0
+var float netAll  = 0.0
+var string todayNote = "waiting for the open"
+
+string action = ""
+float  exitPx = na
+
+book(float px) =>
+    pos * (px - entry) * pv * qty - 2 * qty * comm
+
+if inRth and j == 0
+    // a session that ended early (holiday) leaves no 16:00 bar: close at its last close
+    if pos != 0
+        float px = close[1] - pos * slip
+        float pnl = book(px)
+        netAll += pnl
+        nTrades += 1
+        nWins += pnl > 0 ? 1 : 0
+        pos := 0
+    pc := close[1]
+    adr := array.size(ranges) >= adrLen ? array.avg(ranges) : na
+    dayHi := high
+    dayLo := low
+    todayPnl := 0.0
+    gapPts := open - pc
+    if na(adr)
+        todayNote := "warming up (needs " + str.tostring(adrLen) + " sessions)"
+    else if gapPts == 0
+        todayNote := "no gap: no trade"
+    else if math.abs(gapPts) >= smallGap * adr
+        todayNote := "large gap: no trade"
+    else
+        int side = gapPts < 0 ? 1 : -1
+        float e = open + side * slip
+        if side * (pc - e) > 0
+            pos := side
+            entry := e
+            stop := e - side * stopMult * adr
+            target := pc
+            todayNote := "small gap: " + (side > 0 ? "long" : "short")
+            action := side > 0 ? "BUY" : "SELL SHORT"
+        else
+            todayNote := "gap within slippage: no trade"
+else if inRth
+    dayHi := math.max(dayHi, high)
+    dayLo := math.min(dayLo, low)
+
+// exits: the stop counts from the entry bar on, the target from the next bar (as in the backtest)
+if inRth and pos != 0
+    bool hitStop = pos > 0 ? low <= stop : high >= stop
+    bool hitTarget = j > 0 and (pos > 0 ? high >= target : low <= target)
+    string why = ""
+    if hitStop
+        bool through = j > 0 and (pos > 0 ? open < stop : open > stop)
+        exitPx := (through ? open : stop) - pos * slip
+        why := "STOP"
+    else if hitTarget
+        bool through = pos > 0 ? open > target : open < target
+        exitPx := through ? open : target
+        why := "TARGET"
+    else if j == LASTJ
+        exitPx := close - pos * slip
+        why := "16:00 CLOSE"
+    if why != ""
+        float pnl = book(exitPx)
+        todayPnl += pnl
+        netAll += pnl
+        nTrades += 1
+        nWins += pnl > 0 ? 1 : 0
+        action := action == "" ? "EXIT (" + why + ")" : action + ", then EXIT (" + why + ")"
+        todayNote := todayNote + ", " + str.lower(why) + " " + str.tostring(pnl, "$#,##0")
+        pos := 0
+
+// end of a full session: remember its range and set up tomorrow
+float nextAdr = na
+if inRth and j == LASTJ
+    array.push(ranges, dayHi - dayLo)
+    if array.size(ranges) > adrLen
+        array.shift(ranges)
+    nextAdr := array.size(ranges) >= adrLen ? array.avg(ranges) : na
+
+// tomorrow's price ranges, from today's close
+float buyLo  = na(nextAdr) ? na : close - smallGap * nextAdr   // buy if the open is above this ...
+float buyHi  = close - 2 * tick                                 // ... and at or below this
+float sellLo = close + 2 * tick                                 // short if the open is at or above this ...
+float sellHi = na(nextAdr) ? na : close + smallGap * nextAdr   // ... and below this
+
+// ---------- Alerts (create one with "alert() function calls only") ----------
+string tail = ". Backtest averaged about nothing on MYM, MES and MNQ: watch only."
+if str.startswith(action, "BUY") or str.startswith(action, "SELL")
+    alert("Gap fade " + syminfo.ticker + ": " + (str.startswith(action, "BUY") ? "BUY " : "SELL SHORT ") + str.tostring(qty) + " at the 09:30 open. Gap " +
+      str.tostring(gapPts, format.mintick) + " points. Target " + str.tostring(target, format.mintick) +
+      " (yesterday's close), stop " + str.tostring(stop, format.mintick) + ", out by 16:00" + tail, alert.freq_once_per_bar)
+if str.contains(action, "EXIT")
+    alert("Gap fade " + syminfo.ticker + ": " + action + " near " + str.tostring(exitPx, format.mintick) +
+      ". Today " + str.tostring(todayPnl, "$#,##0") + tail, alert.freq_once_per_bar)
+if inRth and j == LASTJ and not na(nextAdr)
+    alert("Gap fade " + syminfo.ticker + " plan for tomorrow's 09:30 open: BUY if it opens above " +
+      str.tostring(buyLo, format.mintick) + " and at or below " + str.tostring(buyHi, format.mintick) +
+      "; SELL SHORT if it opens at or above " + str.tostring(sellLo, format.mintick) + " and below " +
+      str.tostring(sellHi, format.mintick) + ". Target " + str.tostring(close, format.mintick) +
+      " (today's close), stop " + str.tostring(stopMult * nextAdr, format.mintick) + " points from the entry" + tail,
+      alert.freq_once_per_bar_close)
+
+// ---------- Plots ----------
+plotshape(str.startswith(action, "BUY"), "Buy", shape.triangleup, location.belowbar, color.teal, size = size.small)
+plotshape(str.startswith(action, "SELL"), "Short", shape.triangledown, location.abovebar, color.red, size = size.small)
+plotshape(str.contains(action, "EXIT"), "Exit", shape.xcross, location.abovebar, color.orange, size = size.tiny)
+// latest levels only, with the price on the axis
+bool planNow = inRth and j == LASTJ and not na(nextAdr)
+plot(showLevels and pos != 0 ? target : na, "Target (yesterday's close)", color = #3DDC97, linewidth = 2, trackprice = true, show_last = 1, offset = 1, display = display.pane + display.price_scale)
+plot(showLevels and pos != 0 ? stop : na, "Stop", color = #FF6B6B, linewidth = 2, trackprice = true, show_last = 1, offset = 1, display = display.pane + display.price_scale)
+plot(showLevels and planNow ? buyLo : na, "Tomorrow: buy if it opens between this and today's close", color = #3DDC97, linewidth = 2, trackprice = true, show_last = 1, offset = 1, display = display.pane + display.price_scale)
+plot(showLevels and planNow ? sellHi : na, "Tomorrow: short if it opens between today's close and this", color = #FF6B6B, linewidth = 2, trackprice = true, show_last = 1, offset = 1, display = display.pane + display.price_scale)
+
+// ---------- Status panel ----------
+PANEL_BG   = #1E222D
+PANEL_TEXT = #F0F3FA
+PANEL_OK   = #3DDC97
+PANEL_BAD  = #FF6B6B
+var table panel = table.new(position.top_right, 2, 8, bgcolor = PANEL_BG, frame_color = #434651, frame_width = 1, border_color = #2A2E39, border_width = 1)
+if showPanel and barstate.islast
+    string root = syminfo.root
+    string evidence = root == "MYM" ? "+$293 over 243 trades: no edge (watch only)" : root == "MES" ? "-$631 over 227 trades: no edge (watch only)" : root == "MNQ" ? "-$121 over 226 trades: no edge (watch only)" : "not tested"
+    string posTxt = pos > 0 ? "LONG " + str.tostring(qty) : pos < 0 ? "SHORT " + str.tostring(qty) : "FLAT"
+    float openPnl = pos != 0 ? pos * (close - entry) * pv * qty - qty * comm : 0.0
+    string nextTxt = pos != 0 ? "target " + str.tostring(target, format.mintick) + ", stop " + str.tostring(stop, format.mintick) : planNow ? "buy if it opens " + str.tostring(buyLo, format.mintick) + " to " + str.tostring(buyHi, format.mintick) + "; short " + str.tostring(sellLo, format.mintick) + " to " + str.tostring(sellHi, format.mintick) : inRth ? "no new trade until tomorrow's open" : "see the 16:00 bar for tomorrow's ranges"
+    string histTxt = nTrades == 0 ? "no trades yet" : str.tostring(nTrades) + " trades, " + str.tostring(netAll, "$#,##0") + ", " + str.tostring(100.0 * nWins / nTrades, "#") + "% won"
+    table.cell(panel, 0, 0, "Position", text_halign = text.align_left, text_color = PANEL_TEXT)
+    table.cell(panel, 1, 0, posTxt, text_color = pos > 0 ? PANEL_OK : pos < 0 ? PANEL_BAD : PANEL_TEXT)
+    table.cell(panel, 0, 1, "Today", text_halign = text.align_left, text_color = PANEL_TEXT)
+    table.cell(panel, 1, 1, (na(gapPts) ? "" : "gap " + str.tostring(gapPts, format.mintick) + ": ") + todayNote, text_color = PANEL_TEXT)
+    table.cell(panel, 0, 2, "Next", text_halign = text.align_left, text_color = PANEL_TEXT)
+    table.cell(panel, 1, 2, nextTxt, text_color = PANEL_TEXT)
+    table.cell(panel, 0, 3, "Today's P&L", text_halign = text.align_left, text_color = PANEL_TEXT)
+    table.cell(panel, 1, 3, str.tostring(todayPnl + openPnl, "$#,##0"), text_color = todayPnl + openPnl >= 0 ? PANEL_OK : PANEL_BAD)
+    table.cell(panel, 0, 4, "On this chart", text_halign = text.align_left, text_color = PANEL_TEXT)
+    table.cell(panel, 1, 4, histTxt, text_color = netAll >= 0 ? PANEL_OK : PANEL_BAD)
+    table.cell(panel, 0, 5, "Backtest evidence", text_halign = text.align_left, text_color = PANEL_TEXT)
+    table.cell(panel, 1, 5, evidence, text_color = PANEL_BAD)
+    table.cell(panel, 0, 6, "Session", text_halign = text.align_left, text_color = PANEL_TEXT)
+    table.cell(panel, 1, 6, ethSeen ? "set the chart to regular hours" : "regular hours: OK", text_color = ethSeen ? PANEL_BAD : PANEL_OK)
+    table.cell(panel, 0, 7, "Chart", text_halign = text.align_left, text_color = PANEL_TEXT)
+    table.cell(panel, 1, 7, is5 ? "5-minute: OK" : "switch to a 5-minute chart", text_color = is5 ? PANEL_OK : PANEL_BAD)

@@ -440,6 +440,16 @@ $8,000, so fading stretches costs most on trend days. With the filter, MNQ
 made money (+$2,451, positive in year 1, slightly negative in year 2), which
 is not significant.
 
+`pine/gap_fade.pine` follows the small-gap fade on a 5-minute `MYM1!`, `MES1!` or
+`MNQ1!` chart (regular hours only). It is an indicator rather than a strategy:
+the trade starts at the 09:30 open, which a strategy deciding at bar closes cannot
+place without false fills, so the script tracks each trade itself with the
+backtest's fills and shows the chart's totals in its panel. It alerts with the
+next morning's buy and short price ranges at the 16:00 close, at the entry, and at
+the exit. The fade won about 3 trades in 4 but averaged nothing (MYM +$293, MES
+-$631, MNQ -$121 per contract), so the panel marks every market watch-only.
+`--write-trades` also writes `pine/gap_fade_<symbol>_reference_trades.csv`.
+
 `pine/rsi2_intraday.pine` is the 15-minute RSI(2) rule for TradingView (15-minute
 `MES1!`, `MNQ1!` or `MYM1!` chart, regular hours only). It has the same entries,
 exits and 16:00 close, a status panel with the next close's trigger prices, and

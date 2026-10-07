@@ -126,6 +126,21 @@ def gap_trades(b: im.DayBars, multiplier: float, tick: float, mode: str = "fade"
     return trades
 
 
+def gap_trade_rows(b: im.DayBars, trades: list[Trade]) -> list[tuple]:
+    """One row per gap trade: (date, side, entry time, entry fill, exit time, exit fill, reason, dollars).
+
+    Times are US Eastern bar start times (the 5-minute bar in which the stop or
+    target was hit); trades still open at the end exit at the 16:00 close.
+    """
+    def hhmm(i):
+        m = im.OPEN_MIN + i * im.BAR
+        return f"{m // 60:02d}:{m % 60:02d}"
+
+    return [(str(b.date[t.day]), "long" if t.side > 0 else "short", hhmm(t.fill_bar),
+             round(float(t.entry), 2), "16:00" if t.reason == "close" else hhmm(t.exit_bar),
+             round(float(t.exit_price), 2), t.reason, round(float(t.pnl), 2)) for t in trades]
+
+
 def rsi2_intraday_positions(b: im.DayBars, minutes: int = 15, entry: float = 10.0,
                             trend: int = 200, exit_sma: int = 5, allow_short: bool = True,
                             last: str = "15:30") -> np.ndarray:

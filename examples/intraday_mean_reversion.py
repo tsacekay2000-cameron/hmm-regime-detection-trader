@@ -70,7 +70,7 @@ def main(argv: Optional[list[str]] = None) -> None:
     ap.add_argument("--flips", type=int, default=20000)
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--write-trades", action="store_true",
-                    help="write pine/vwap_reversion_ and rsi2_15m_<symbol>_reference_trades.csv")
+                    help="write pine/{vwap_reversion,rsi2_15m,gap_fade}_<symbol>_reference_trades.csv")
     args = ap.parse_args(argv)
 
     for symbol in args.symbols.upper().split(","):
@@ -97,6 +97,15 @@ def main(argv: Optional[list[str]] = None) -> None:
                             "exit_fill", "pnl_1_contract"])
                 w.writerows(rows)
             print(f"{symbol}: {len(rows)} RSI(2) 15-minute trades, {sum(r[6] for r in rows):+,.0f} "
+                  f"-> {out.relative_to(out.parents[1])}")
+            rows = mr.gap_trade_rows(b, mr.gap_trades(b, spec.multiplier, spec.tick, "fade"))
+            out = Path(__file__).parents[1] / "pine" / f"gap_fade_{symbol.lower()}_reference_trades.csv"
+            with open(out, "w", newline="") as fh:
+                w = csv.writer(fh)
+                w.writerow(["date", "side", "entry_time_et", "entry_fill", "exit_time_et",
+                            "exit_fill", "exit_reason", "pnl_1_contract"])
+                w.writerows(rows)
+            print(f"{symbol}: {len(rows)} gap-fade trades, {sum(r[7] for r in rows):+,.0f} "
                   f"-> {out.relative_to(out.parents[1])}")
         print(f"\n== {symbol}: {b.date[0]} .. {b.date[-1]}, {b.date.size} full sessions, "
               f"1 contract, after costs ==")
