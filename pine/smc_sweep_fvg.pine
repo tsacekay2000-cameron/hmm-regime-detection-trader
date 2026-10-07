@@ -1,5 +1,5 @@
 // Liquidity sweep + fair value gap, 1R target (hmm-regime-detection-trader, hmm_trader/smc.py).
-// Use on a 5-MINUTE chart of MES1! or MNQ1! (back-adjustment "B-ADJ" on). Regular hours, US Eastern
+// Use on a 5-MINUTE chart of MES1!, MNQ1! or MYM1! (back-adjustment "B-ADJ" on). Regular hours, US Eastern
 // time. Alerts name the chart's symbol; add the script and an alert to each chart you want to follow.
 //
 // Setup (long; short mirrors it):
@@ -18,9 +18,11 @@
 //
 // Backtest (Python, 2024-10 to 2026-09, MES): 120 trades, 58% won, +0.17R per trade, +$3,001.
 // On MNQ the same rule made +$67 over 84 trades (-0.03R per trade, p = 0.49): no edge, so MNQ
-// alerts are for watching, not trading. On MES it was the best of 14 variant/market combinations, so its
+// alerts are for watching, not trading. On MYM it made +$749 over 130 trades (+0.06R +/- 0.08R,
+// p = 0.44, a loss in year 1): within noise, so MYM alerts are for watching too.
+// On MES it was the best of 14 variant/market combinations, so its
 // edge may be luck: paper trade it, do not rely on it. Reference trades to compare:
-// pine/smc_1r_{mes,mnq}_reference_trades.csv (python -m examples.smc_backtest --write-trades).
+// pine/smc_1r_{mes,mnq,mym}_reference_trades.csv (python -m examples.smc_backtest --write-trades).
 // TradingView fills differ slightly (its limit fills at the order price one tick inside the gap,
 // and it may hit the target on the fill bar, which the backtest does not allow).
 // Backtesting research, not financial advice.
@@ -305,7 +307,7 @@ if showPanel and bar_index >= last_bar_index - 1
     table.cell(panel, 0, 7, "Volume history", text_halign = text.align_left, text_color = PANEL_TEXT)
     table.cell(panel, 1, 7, str.tostring(vdays) + " of " + str.tostring(RVOL_DAYS) + " sessions" + (vdays >= RVOL_DAYS ? "" : " (warming up)"), text_color = vdays >= RVOL_DAYS ? PANEL_OK : PANEL_WARN)
     string root = syminfo.root
-    string evidence = root == "MES" ? "+$3,001, 58% won; best of 28 tries, may be luck" : root == "MNQ" ? "no edge: +$67, -0.03R (watch only)" : "not tested"
+    string evidence = root == "MES" ? "+$3,001, 58% won; best of 28 tries, may be luck" : root == "MNQ" ? "no edge: +$67, -0.03R (watch only)" : root == "MYM" ? "within noise: +$749, +0.06R (watch only)" : "not tested"
     table.cell(panel, 0, 8, "Backtest evidence", text_halign = text.align_left, text_color = PANEL_TEXT)
     table.cell(panel, 1, 8, evidence, text_color = root == "MES" ? PANEL_WARN : PANEL_BAD)
     table.cell(panel, 0, 9, "Chart", text_halign = text.align_left, text_color = PANEL_TEXT)
