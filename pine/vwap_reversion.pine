@@ -1,5 +1,6 @@
 // VWAP reversion with a range-day filter (hmm-regime-detection-trader, hmm_trader/intraday_mr.py).
-// Use on a 5-MINUTE chart of MNQ1! (back-adjustment "B-ADJ" on). Regular hours, US Eastern time.
+// Use on a 5-MINUTE chart of MNQ1! or MES1! (back-adjustment "B-ADJ" on). Regular hours, US Eastern
+// time. Alerts name the chart's symbol; add the script and an alert to each chart you want to follow.
 //
 // Rules (checked on every 5-minute close):
 //   - VWAP and its volume-weighted standard deviation (SD) bands, both from the 09:30 open,
@@ -16,9 +17,10 @@
 //
 // Backtest (Python, 2024-10 to 2026-09, 1 MNQ after $0.62 + 1 tick per side): +$2,451 over 374
 // trades, positive in year 1 and slightly negative in year 2; a coin-flip test of its sides gave
-// p = 0.17, and the same rule lost money on MES. Without the range-day filter it lost $5,501.
-// Treat it as a weak lead, not a proven edge. Reference trades to compare:
-// pine/vwap_reversion_mnq_reference_trades.csv (python -m examples.intraday_mean_reversion --write-trades).
+// p = 0.17. On MES the same rule LOST $2,200 over 412 trades, in both years (p = 0.64), so MES
+// alerts are for watching, not trading. Without the range-day filter it lost $5,501 on MNQ and
+// $6,836 on MES. Treat it as a weak lead on MNQ, not a proven edge. Reference trades to compare:
+// pine/vwap_reversion_{mnq,mes}_reference_trades.csv (python -m examples.intraday_mean_reversion --write-trades).
 // Backtesting research, not financial advice.
 
 //@version=6
@@ -167,7 +169,7 @@ PANEL_TEXT = #F0F3FA
 PANEL_OK   = #3DDC97
 PANEL_BAD  = #FF6B6B
 PANEL_WARN = #FF9F43
-var table panel = table.new(position.top_right, 2, 9, bgcolor = PANEL_BG, frame_color = #434651, frame_width = 1, border_color = #2A2E39, border_width = 1)
+var table panel = table.new(position.top_right, 2, 10, bgcolor = PANEL_BG, frame_color = #434651, frame_width = 1, border_color = #2A2E39, border_width = 1)
 // the last confirmed bar: this strategy only runs when a bar closes, so it never sees the open one
 if showPanel and bar_index >= last_bar_index - 1
     int stored = int(math.floor(array.size(hist) / N))
@@ -195,5 +197,9 @@ if showPanel and bar_index >= last_bar_index - 1
     table.cell(panel, 1, 6, str.tostring(dayPnl, "$#,##0"), text_color = dayPnl >= 0 ? PANEL_OK : PANEL_BAD)
     table.cell(panel, 0, 7, "Sessions of history", text_halign = text.align_left, text_color = PANEL_TEXT)
     table.cell(panel, 1, 7, str.tostring(stored) + " of " + str.tostring(lookback) + (stored >= lookback ? "" : " (warming up)"), text_color = stored >= lookback ? PANEL_OK : PANEL_WARN)
-    table.cell(panel, 0, 8, "Chart", text_halign = text.align_left, text_color = PANEL_TEXT)
-    table.cell(panel, 1, 8, is5m ? "5-minute: OK" : "switch to a 5-minute chart", text_color = is5m ? PANEL_OK : PANEL_BAD)
+    string root = syminfo.root
+    string evidence = root == "MNQ" ? "weak lead: +$2,451, p = 0.17" : root == "MES" ? "lost money: -$2,200 (watch only)" : "not tested"
+    table.cell(panel, 0, 8, "Backtest evidence", text_halign = text.align_left, text_color = PANEL_TEXT)
+    table.cell(panel, 1, 8, evidence, text_color = root == "MNQ" ? PANEL_WARN : PANEL_BAD)
+    table.cell(panel, 0, 9, "Chart", text_halign = text.align_left, text_color = PANEL_TEXT)
+    table.cell(panel, 1, 9, is5m ? "5-minute: OK" : "switch to a 5-minute chart", text_color = is5m ? PANEL_OK : PANEL_BAD)

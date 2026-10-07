@@ -84,6 +84,12 @@ def test_vwap_reference_trades_and_pine_defaults():
     assert len(saved) == len(rows) == 374
     assert [(r["date"], r["side"], r["entry_time_et"]) for r in saved] == [r[:3] for r in rows]
     assert sum(float(r["pnl_1_contract"]) for r in saved) == pytest.approx(2451, abs=1)
+    b_mes = im.load_day_bars(root / "examples" / "data" / "mes_5min_rth.csv.gz")
+    mes = im.trade_list(b_mes, mr.vwap_reversion_positions(b_mes), 5.0, 0.25)
+    with open(root / "pine" / "vwap_reversion_mes_reference_trades.csv") as fh:
+        saved_mes = list(csv.DictReader(fh))
+    assert len(saved_mes) == len(mes) == 412
+    assert sum(float(r["pnl_1_contract"]) for r in saved_mes) == pytest.approx(-2200, abs=1)
     src = (root / "pine" / "vwap_reversion.pine").read_text()
     for snippet in ("//@version=6", 'input.float(2.0, "Enter beyond (SD from VWAP)"',
                     'input.float(3.0, "Stop beyond (SD from VWAP)"', 'input.int(14, "Noise lookback (sessions)"',

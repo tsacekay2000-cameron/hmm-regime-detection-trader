@@ -439,7 +439,8 @@ made money (+$2,451, positive in year 1, slightly negative in year 2), which
 is not significant.
 
 `pine/vwap_reversion.pine` is the TradingView version for a 5-minute `MNQ1!`
-chart. It uses the same VWAP and SD bands, range-day filter, exits and 16:00
+or `MES1!` chart (its panel marks MES as watch-only, since the rule lost money
+there). It uses the same VWAP and SD bands, range-day filter, exits and 16:00
 close. It has a status panel (position, VWAP/SD, what the next close would
 trigger, day type, noise boundary, today's P&L), latest-value lines for VWAP
 and the bands or stop, and alerts. `--write-trades` writes the backtest's trades
