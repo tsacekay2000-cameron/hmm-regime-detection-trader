@@ -1,5 +1,6 @@
 // Liquidity sweep + fair value gap, 1R target (hmm-regime-detection-trader, hmm_trader/smc.py).
-// Use on a 5-MINUTE chart of MES1! (back-adjustment "B-ADJ" on). Regular hours, US Eastern time.
+// Use on a 5-MINUTE chart of MES1!, MNQ1! or MYM1! (back-adjustment "B-ADJ" on). Regular hours, US Eastern
+// time. Alerts name the chart's symbol; add the script and an alert to each chart you want to follow.
 //
 // Setup (long; short mirrors it):
 //   1. Liquidity: yesterday's regular-hours low and today's swing lows (a low below the 2 bars on
@@ -16,9 +17,12 @@
 //   At most one long and one short per day, one position at a time.
 //
 // Backtest (Python, 2024-10 to 2026-09, MES): 120 trades, 58% won, +0.17R per trade, +$3,001.
-// It was the best of 14 variant/market combinations and the same rule made nothing on MNQ, so its
+// On MNQ the same rule made +$67 over 84 trades (-0.03R per trade, p = 0.49): no edge, so MNQ
+// alerts are for watching, not trading. On MYM it made +$749 over 130 trades (+0.06R +/- 0.08R,
+// p = 0.44, a loss in year 1): within noise, so MYM alerts are for watching too.
+// On MES it was the best of 14 variant/market combinations, so its
 // edge may be luck: paper trade it, do not rely on it. Reference trades to compare:
-// pine/smc_1r_mes_reference_trades.csv (python -m examples.smc_backtest --write-trades).
+// pine/smc_1r_{mes,mnq,mym}_reference_trades.csv (python -m examples.smc_backtest --write-trades).
 // TradingView fills differ slightly (its limit fills at the order price one tick inside the gap,
 // and it may hit the target on the fill bar, which the backtest does not allow).
 // Backtesting research, not financial advice.
@@ -272,7 +276,7 @@ PANEL_TEXT = #F0F3FA
 PANEL_OK   = #3DDC97
 PANEL_BAD  = #FF6B6B
 PANEL_WARN = #FF9F43
-var table panel = table.new(position.top_right, 2, 9, bgcolor = PANEL_BG, frame_color = #434651, frame_width = 1, border_color = #2A2E39, border_width = 1)
+var table panel = table.new(position.top_right, 2, 10, bgcolor = PANEL_BG, frame_color = #434651, frame_width = 1, border_color = #2A2E39, border_width = 1)
 // the last confirmed bar: this strategy only runs when a bar closes, so it never sees the open one
 if showPanel and bar_index >= last_bar_index - 1
     float nearLow = na
@@ -302,5 +306,9 @@ if showPanel and bar_index >= last_bar_index - 1
     table.cell(panel, 1, 6, str.tostring(dayPnl, "$#,##0"), text_color = dayPnl >= 0 ? PANEL_OK : PANEL_BAD)
     table.cell(panel, 0, 7, "Volume history", text_halign = text.align_left, text_color = PANEL_TEXT)
     table.cell(panel, 1, 7, str.tostring(vdays) + " of " + str.tostring(RVOL_DAYS) + " sessions" + (vdays >= RVOL_DAYS ? "" : " (warming up)"), text_color = vdays >= RVOL_DAYS ? PANEL_OK : PANEL_WARN)
-    table.cell(panel, 0, 8, "Chart", text_halign = text.align_left, text_color = PANEL_TEXT)
-    table.cell(panel, 1, 8, is5m ? "5-minute: OK" : "switch to a 5-minute chart", text_color = is5m ? PANEL_OK : PANEL_BAD)
+    string root = syminfo.root
+    string evidence = root == "MES" ? "+$3,001, 58% won; best of 28 tries, may be luck" : root == "MNQ" ? "no edge: +$67, -0.03R (watch only)" : root == "MYM" ? "within noise: +$749, +0.06R (watch only)" : "not tested"
+    table.cell(panel, 0, 8, "Backtest evidence", text_halign = text.align_left, text_color = PANEL_TEXT)
+    table.cell(panel, 1, 8, evidence, text_color = root == "MES" ? PANEL_WARN : PANEL_BAD)
+    table.cell(panel, 0, 9, "Chart", text_halign = text.align_left, text_color = PANEL_TEXT)
+    table.cell(panel, 1, 9, is5m ? "5-minute: OK" : "switch to a 5-minute chart", text_color = is5m ? PANEL_OK : PANEL_BAD)

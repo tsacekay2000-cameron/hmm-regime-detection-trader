@@ -355,8 +355,9 @@ bootstrap evaluations at 1 MNQ against 20% with no edge (52% of historical
 start days), but it failed on MES and its flip p of 0.10 is not significant
 over two years: a lead to watch, not a proven edge.
 
-`pine/noise_boundary.pine` is the TradingView version for a 5-minute `MNQ1!`
-chart: the same bands, checks, VWAP exit and 16:00 close, with a status panel
+`pine/noise_boundary.pine` is the TradingView version for a 5-minute `MNQ1!`,
+`MES1!` or `MYM1!` chart (its panel marks MES and MYM as watch-only, since the
+rule lost money there: -$1,134 on MYM over 425 trades): the same bands, checks, VWAP exit and 16:00 close, with a status panel
 (position, bands, VWAP, the next check and its levels, today's P&L) and alerts.
 `python -m examples.intraday_momentum --write-trades` writes the backtest's
 trades to `pine/noise_boundary_<symbol>_reference_trades.csv` for comparison.
@@ -398,11 +399,73 @@ python -m examples.smc_backtest                     # MES and MNQ, 2024-10 .. 20
 - **The 1R version on MES** (side p 0.04) is one cell of 14 and failed on MNQ, so it is what chance alone could produce.
 
 `pine/smc_sweep_fvg.pine` is that 1R version for a 5-minute `MES1!` chart in
-TradingView. It finds the same sweeps, gaps and volume filter, places the limit
+TradingView. It also runs on `MNQ1!` and `MYM1!`, both marked watch-only: MNQ made
++$67 (-0.03R), and MYM +$749 (+0.06R +/- 0.08R, a loss in year 1). It finds the same sweeps, gaps and volume filter, places the limit
 order with its bracket stop and target, and shows a status panel with the
 position, the order, the nearest liquidity and any open sweep, plus alerts. Its
 `python -m examples.smc_backtest --write-trades` writes the backtest's trades to
 `pine/smc_1r_<symbol>_reference_trades.csv`.
+
+## Intraday mean reversion: VWAP, gaps, RSI(2) (`examples/intraday_mean_reversion.py`)
+
+`hmm_trader/intraday_mr.py` has three intraday rules on the 5-minute bars,
+fixed before testing (1 contract, after costs, MES primary and MNQ as the
+check):
+
+- **VWAP reversion**: fade a close beyond VWAP +/- 2 volume-weighted standard
+  deviations between 10:00 and 15:00. Exit back at VWAP, beyond 3 SD, or when
+  the day breaks its noise-boundary bands (a trend day). Entries are allowed
+  only while the bands are unbroken.
+- **Gaps**: fade small gaps (< 0.3x the 14-day average range) toward the
+  previous close, with the stop 0.5x range away. Follow large gaps (>= 0.6x),
+  with the stop at the previous close.
+- **RSI(2) on 15-minute bars**: Connors' rule, long and short, flat at 16:00.
+
+```bash
+python -m examples.intraday_mean_reversion            # MES and MNQ, 2024-10 .. 2026-09
+```
+
+| Net $ (1 contract) | MES | MNQ |
+|---|---|---|
+| VWAP reversion, 2 SD + range filter | -2,200 | +2,451 (p 0.17) |
+| VWAP reversion, no range filter | -6,836 | -5,501 |
+| Fade small gaps (avg R, win rate) | -0.01R, 77% | -0.01R, 74% |
+| Follow large gaps | -2,653 | -4,649 |
+| RSI(2), 15-minute bars | -4,840 | -2,910 |
+
+None works on MES. Gap fades win three times in four but average zero: a
+few stopped-out losses cancel the small wins. The range-day filter is the one
+consistent finding: on both markets it cut VWAP-reversion losses by $4,600 to
+$8,000, so fading stretches costs most on trend days. With the filter, MNQ
+made money (+$2,451, positive in year 1, slightly negative in year 2), which
+is not significant.
+
+`pine/gap_fade.pine` follows the small-gap fade on a 5-minute `MYM1!`, `MES1!` or
+`MNQ1!` chart (regular hours only). It is an indicator rather than a strategy:
+the trade starts at the 09:30 open, which a strategy deciding at bar closes cannot
+place without false fills, so the script tracks each trade itself with the
+backtest's fills and shows the chart's totals in its panel. It alerts with the
+next morning's buy and short price ranges at the 16:00 close, at the entry, and at
+the exit. The fade won about 3 trades in 4 but averaged nothing (MYM +$293, MES
+-$631, MNQ -$121 per contract), so the panel marks every market watch-only.
+`--write-trades` also writes `pine/gap_fade_<symbol>_reference_trades.csv`.
+
+`pine/rsi2_intraday.pine` is the 15-minute RSI(2) rule for TradingView (15-minute
+`MES1!`, `MNQ1!` or `MYM1!` chart, regular hours only). It has the same entries,
+exits and 16:00 close, a status panel with the next close's trigger prices, and
+alerts. The rule lost money on all three markets (MES -$4,840, MNQ -$2,910, MYM
+-$3,029 per contract), so the panel marks every market watch-only.
+`--write-trades` also writes `pine/rsi2_15m_<symbol>_reference_trades.csv`.
+
+`pine/vwap_reversion.pine` is the TradingView version for a 5-minute `MNQ1!`,
+`MES1!` or `MYM1!` chart (its panel marks MES and MYM as watch-only, since the
+rule lost money there: -$1,416 on MYM over 332 trades). `examples/data/mym_5min_rth.csv.gz`
+is MYM 5-minute RTH bars with volume from Massive.com, 2024-10-07 to 2026-09-28,
+on the MES contract calendar. It uses the same VWAP and SD bands, range-day filter, exits and 16:00
+close. It has a status panel (position, VWAP/SD, what the next close would
+trigger, day type, noise boundary, today's P&L), latest-value lines for VWAP
+and the bands or stop, and alerts. `--write-trades` writes the backtest's trades
+to `pine/vwap_reversion_<symbol>_reference_trades.csv`.
 
 ## Trend following on MES (`examples/mes_trend.py`)
 

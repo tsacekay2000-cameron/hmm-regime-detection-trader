@@ -119,6 +119,18 @@ def test_reference_trades_and_pine_defaults():
         saved = list(csv.DictReader(fh))
     assert len(saved) == len(tr) == 120
     assert sum(float(r["pnl"]) for r in saved) == pytest.approx(sum(t.pnl for t in tr), abs=0.05)
+    b_nq = im.load_day_bars(root / "examples" / "data" / "mnq_5min_rth.csv.gz")
+    nq = smc.backtest(b_nq, 2.0, 0.25, smc.variants()["full, 1R target"])
+    with open(root / "pine" / "smc_1r_mnq_reference_trades.csv") as fh:
+        saved_nq = list(csv.DictReader(fh))
+    assert len(saved_nq) == len(nq) == 84
+    assert sum(float(r["pnl"]) for r in saved_nq) == pytest.approx(sum(t.pnl for t in nq), abs=0.05)
+    b_ym = im.load_day_bars(root / "examples" / "data" / "mym_5min_rth.csv.gz")
+    ym = smc.backtest(b_ym, 0.5, 1.0, smc.variants()["full, 1R target"])
+    with open(root / "pine" / "smc_1r_mym_reference_trades.csv") as fh:
+        saved_ym = list(csv.DictReader(fh))
+    assert len(saved_ym) == len(ym) == 130
+    assert sum(float(r["pnl"]) for r in saved_ym) == pytest.approx(sum(t.pnl for t in ym), abs=0.05)
     src = (root / "pine" / "smc_sweep_fvg.pine").read_text()
     for snippet in ("//@version=6", 'input.float(200, "Risk per trade ($)"', 'input.float(1.0, "Target (R multiple)"',
                     'input.float(1.5, "Min. relative volume', 'input.int(6, "Gap must form within',
