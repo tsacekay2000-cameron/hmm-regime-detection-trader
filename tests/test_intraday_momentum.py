@@ -99,6 +99,12 @@ def test_trade_list_matches_simulator_and_reference_csv():
         saved_mes = list(csv.DictReader(fh))
     assert len(saved_mes) == len(mes) == 425
     assert sum(float(r["pnl_1_contract"]) for r in saved_mes) == pytest.approx(-2698, abs=1)
+    b_ym = im.load_day_bars(root / "examples" / "data" / "mym_5min_rth.csv.gz")
+    ym = im.trade_list(b_ym, im.noise_boundary_positions(b_ym), 0.5, 1.0)
+    with open(root / "pine" / "noise_boundary_mym_reference_trades.csv") as fh:
+        saved_ym = list(csv.DictReader(fh))
+    assert len(saved_ym) == len(ym) == 425
+    assert sum(float(r["pnl_1_contract"]) for r in saved_ym) == pytest.approx(-1134, abs=2)
     src = (root / "pine" / "noise_boundary.pine").read_text()
     for snippet in ("//@version=6", 'input.int(14, "Noise lookback (sessions)"',
                     'input.int(30, "Check every (minutes)"', "commission_value = 0.62",

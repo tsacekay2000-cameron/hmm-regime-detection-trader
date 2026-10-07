@@ -1,7 +1,7 @@
 // Noise boundary + VWAP intraday momentum (hmm-regime-detection-trader, hmm_trader/intraday_momentum.py).
 // After Zarattini, Aziz & Barbon, "Beat the Market: An Effective Intraday Momentum Strategy for
 // S&P500 ETF (SPY)" (2024), with its published settings and a fixed number of contracts.
-// Use on a 5-MINUTE chart of MNQ1! or MES1! (back-adjustment "B-ADJ" on). Regular hours, US Eastern
+// Use on a 5-MINUTE chart of MNQ1!, MES1! or MYM1! (back-adjustment "B-ADJ" on). Regular hours, US Eastern
 // time. Alerts name the chart's symbol; add the script and an alert to each chart you want to follow.
 //
 // Rules:
@@ -16,8 +16,9 @@
 // Backtest (Python, 2024-10 to 2026-09, 1 MNQ after $0.62 + 1 tick per side): +$6,567, 380 trades,
 // profitable in 7 of 8 quarters; a coin-flip test of its long/short choices gave p = 0.10, and the
 // same rule LOST $2,698 on MES over 425 trades, in both years (p = 0.66), so MES alerts are for
-// watching, not trading. Treat it as a lead on MNQ, not a proven edge. Reference trades to compare:
-// pine/noise_boundary_{mnq,mes}_reference_trades.csv (python -m examples.intraday_momentum --write-trades).
+// watching, not trading. On MYM (micro Dow) it LOST $1,134 over 425 trades (p = 0.55), so MYM
+// alerts are for watching too. Treat it as a lead on MNQ, not a proven edge. Reference trades to
+// compare: pine/noise_boundary_{mnq,mes,mym}_reference_trades.csv (python -m examples.intraday_momentum --write-trades).
 // TradingView keeps a limited number of 5-minute bars, so the Strategy Tester covers less history
 // than the Python test unless the chart is set to regular hours or deep backtesting is used.
 // Backtesting research, not financial advice.
@@ -197,7 +198,7 @@ if showPanel and bar_index >= last_bar_index - 1
     table.cell(panel, 0, 6, "Sessions of history", text_halign = text.align_left, text_color = PANEL_TEXT)
     table.cell(panel, 1, 6, str.tostring(stored) + " of " + str.tostring(lookback) + (stored >= lookback ? "" : " (warming up)"), text_color = stored >= lookback ? PANEL_OK : PANEL_WARN)
     string root = syminfo.root
-    string evidence = root == "MNQ" ? "lead: +$6,567, p = 0.10" : root == "MES" ? "lost money: -$2,698 (watch only)" : "not tested"
+    string evidence = root == "MNQ" ? "lead: +$6,567, p = 0.10" : root == "MES" ? "lost money: -$2,698 (watch only)" : root == "MYM" ? "lost money: -$1,134 (watch only)" : "not tested"
     table.cell(panel, 0, 7, "Backtest evidence", text_halign = text.align_left, text_color = PANEL_TEXT)
     table.cell(panel, 1, 7, evidence, text_color = root == "MNQ" ? PANEL_WARN : PANEL_BAD)
     table.cell(panel, 0, 8, "Chart", text_halign = text.align_left, text_color = PANEL_TEXT)
