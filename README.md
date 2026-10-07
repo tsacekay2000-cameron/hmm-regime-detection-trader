@@ -398,8 +398,8 @@ python -m examples.smc_backtest                     # MES and MNQ, 2024-10 .. 20
 - **Fading every sweep loses clearly.** Swept levels more often keep going than reverse.
 - **The 1R version on MES** (side p 0.04) is one cell of 14 and failed on MNQ, so it is what chance alone could produce.
 
-`pine/smc_sweep_fvg.pine` is that 1R version for a 5-minute `MES1!` chart in
-TradingView. It finds the same sweeps, gaps and volume filter, places the limit
+`pine/smc_sweep_fvg.pine` is that 1R version for a 5-minute `MES1!` (or `MNQ1!`,
+marked watch-only since it had no edge there) chart in TradingView. It finds the same sweeps, gaps and volume filter, places the limit
 order with its bracket stop and target, and shows a status panel with the
 position, the order, the nearest liquidity and any open sweep, plus alerts. Its
 `python -m examples.smc_backtest --write-trades` writes the backtest's trades to
