@@ -102,3 +102,22 @@ def test_vwap_reference_trades_and_pine_defaults():
                     'input.float(3.0, "Stop beyond (SD from VWAP)"', 'input.int(14, "Noise lookback (sessions)"',
                     "FIRST = 5", "LAST  = 65", "commission_value = 0.62", "slippage = 1", "margin_long = 10"):
         assert snippet in src
+
+
+def test_rsi2_15m_reference_trades_and_pine_defaults():
+    import csv
+    from pathlib import Path
+    root = Path(__file__).parents[1]
+    expected = {"mes": (5.0, 0.25, 507, -4840), "mnq": (2.0, 0.25, 494, -2910), "mym": (0.5, 1.0, 514, -3029)}
+    for sym, (mult, tick, n, total) in expected.items():
+        b = im.load_day_bars(root / "examples" / "data" / f"{sym}_5min_rth.csv.gz")
+        rows = im.trade_list(b, mr.rsi2_intraday_positions(b), mult, tick)
+        with open(root / "pine" / f"rsi2_15m_{sym}_reference_trades.csv") as fh:
+            saved = list(csv.DictReader(fh))
+        assert len(saved) == len(rows) == n
+        assert sum(float(r["pnl_1_contract"]) for r in saved) == pytest.approx(total, abs=1)
+    src = (root / "pine" / "rsi2_intraday.pine").read_text()
+    for snippet in ("//@version=6", 'input.int(2, "RSI length"', 'input.float(10, "Long below / short above 100 minus"',
+                    'input.int(200, "Trend average (bars)"', 'input.int(5, "Exit average (bars)"', "LASTJ = 23",
+                    "timeframe.multiplier == 15", "commission_value = 0.62", "slippage = 1", "margin_long = 10"):
+        assert snippet in src

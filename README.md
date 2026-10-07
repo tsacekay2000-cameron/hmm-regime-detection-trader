@@ -440,6 +440,13 @@ $8,000, so fading stretches costs most on trend days. With the filter, MNQ
 made money (+$2,451, positive in year 1, slightly negative in year 2), which
 is not significant.
 
+`pine/rsi2_intraday.pine` is the 15-minute RSI(2) rule for TradingView (15-minute
+`MES1!`, `MNQ1!` or `MYM1!` chart, regular hours only). It has the same entries,
+exits and 16:00 close, a status panel with the next close's trigger prices, and
+alerts. The rule lost money on all three markets (MES -$4,840, MNQ -$2,910, MYM
+-$3,029 per contract), so the panel marks every market watch-only.
+`--write-trades` also writes `pine/rsi2_15m_<symbol>_reference_trades.csv`.
+
 `pine/vwap_reversion.pine` is the TradingView version for a 5-minute `MNQ1!`,
 `MES1!` or `MYM1!` chart (its panel marks MES and MYM as watch-only, since the
 rule lost money there: -$1,416 on MYM over 332 trades). `examples/data/mym_5min_rth.csv.gz`

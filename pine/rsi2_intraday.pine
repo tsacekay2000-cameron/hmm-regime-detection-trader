@@ -1,0 +1,155 @@
+// RSI(2) pullback on 15-minute bars, flat every day (hmm-regime-detection-trader, hmm_trader/intraday_mr.py).
+// Use on a 15-MINUTE chart of MES1!, MNQ1! or MYM1! with REGULAR TRADING HOURS only (chart settings:
+// session "Regular trading hours"; the averages and RSI use regular-hours bars only), back-adjustment
+// "B-ADJ" on. US Eastern time. Alerts name the chart's symbol; add the script and an alert to each chart.
+//
+// Rules (Connors' daily RSI(2) rule on 15-minute bars):
+//   - Long when RSI(2) closes below 10 above the 200-bar average; exit on a close above the 5-bar
+//     average. Short when RSI(2) closes above 90 below the 200-bar average; exit on a close below the
+//     5-bar average. Decisions on each 15-minute close, filled at the next bar's open.
+//   - New entries up to the 15:30 close; everything closed at the 16:00 close (flat every night).
+//
+// Backtest (Python, 2024-10 to 2026-09, 1 contract after $0.62 + 1 tick per side): it LOST money on
+// every market tested: MES -$4,840 over 507 trades, MNQ -$2,910 over 494, MYM -$3,029 over 514
+// (coin-flip side tests p = 0.87, 0.66, 0.87). The daily RSI(2) rule works because it holds a pullback
+// for days; on 15-minute bars the bounces are too small to pay the costs. Alerts are for watching only.
+// Reference trades: pine/rsi2_15m_{mes,mnq,mym}_reference_trades.csv
+// (python -m examples.intraday_mean_reversion --write-trades). Backtesting research, not financial advice.
+
+//@version=6
+// margin_long = 10: futures need only a margin deposit, not the contracts' full value.
+strategy("RSI(2) 15-minute (intraday)", shorttitle = "RSI2 15m", overlay = true,
+  initial_capital = 50000, currency = currency.USD,
+  default_qty_type = strategy.fixed, default_qty_value = 1,
+  commission_type = strategy.commission.cash_per_contract, commission_value = 0.62,
+  slippage = 1, pyramiding = 0, process_orders_on_close = false,
+  margin_long = 10, margin_short = 10)
+
+// ---------- Inputs ----------
+rsiLen     = input.int(2, "RSI length", minval = 1, group = "Rules")
+entryLevel = input.float(10, "Long below / short above 100 minus", minval = 1, maxval = 49, group = "Rules")
+trendLen   = input.int(200, "Trend average (bars)", minval = 2, group = "Rules")
+exitLen    = input.int(5, "Exit average (bars)", minval = 2, group = "Rules")
+allowShort = input.bool(true, "Allow shorts", group = "Rules")
+qty        = input.int(1, "Contracts", minval = 1)
+showPanel  = input.bool(true, "Show status panel", group = "Display")
+showLevels = input.bool(true, "Show the trend average and today's trigger levels", group = "Display")
+
+// ---------- Session clock (US Eastern, regular hours 09:30-16:00) ----------
+TZ    = "America/New_York"
+mins  = hour(time, TZ) * 60 + minute(time, TZ)
+j     = int(math.floor((mins - 570) / 15.0))   // 15-minute bar of the session, 0 = 09:30
+is15  = timeframe.isintraday and timeframe.multiplier == 15
+inRth = is15 and mins >= 570 and mins < 960
+LASTJ = 23                                      // the bar closing at 15:30: last new entry
+var bool ethSeen = false
+if is15 and not inRth
+    ethSeen := true                             // extended-hours bars on the chart change the averages
+
+// ---------- Signal ----------
+r      = ta.rsi(close, rsiLen)
+fast   = ta.sma(close, exitLen)
+slow   = ta.sma(close, trendLen)
+
+// Closing prices that trigger RSI(n) below `level` / above 100 - `level` on the NEXT bar
+// (same formula as hmm_trader.mean_reversion.rsi2_levels; Wilder averages move by one step).
+rsiTrigger(float src, int n, float level, bool below) =>
+    float up = ta.rma(math.max(src - src[1], 0), n)
+    float dn = ta.rma(math.max(src[1] - src, 0), n)
+    float k  = level / (100 - level)
+    float px = na
+    if not na(up) and not na(dn)
+        if below
+            px := up / k > dn ? src - (n - 1) * (up / k - dn) : src + (n - 1) * (k * dn - up)
+        else
+            px := dn / k > up ? src + (n - 1) * (dn / k - up) : src - (n - 1) * (k * up - dn)
+    px
+
+buyBelow   = rsiTrigger(close, rsiLen, entryLevel, true)
+sellAbove  = rsiTrigger(close, rsiLen, entryLevel, false)
+trendNext  = math.sum(close, trendLen - 1) / (trendLen - 1)   // next close above its own average iff above this
+exitNext   = math.sum(close, exitLen - 1) / (exitLen - 1)
+
+var int held = 0
+var float dayStartNet = 0.0
+if inRth and j == 0
+    if strategy.position_size != 0  // a shortened session leaves no 16:00 bar
+        strategy.close_all(comment = "Session end", immediately = true)
+    held := 0
+    dayStartNet := strategy.netprofit
+
+string action = ""
+if inRth and j <= 24 and not na(r)
+    int was = held
+    if held > 0 and close > fast
+        held := 0
+    else if held < 0 and close < fast
+        held := 0
+    if held == 0 and j <= LASTJ and not na(slow)
+        if r < entryLevel and close > slow
+            held := 1
+        else if allowShort and r > 100 - entryLevel and close < slow
+            held := -1
+    if held != was
+        action := held > 0 ? "BUY" : held < 0 ? "SELL SHORT" : "EXIT"
+        if held > 0
+            strategy.entry("Long", strategy.long, qty = qty)
+        else if held < 0
+            strategy.entry("Short", strategy.short, qty = qty)
+        else
+            strategy.close_all(comment = "Exit")
+
+// close everything at 16:00
+if inRth and j == 25
+    held := 0
+    strategy.close_all(comment = "16:00 close", immediately = true)
+
+// ---------- Alerts (create one with "alert() function calls only") ----------
+if action != ""
+    alert("RSI(2) 15m " + syminfo.ticker + ": " + action + (action == "EXIT" ? "" : " " + str.tostring(qty)) +
+      " at the next bar's open. Close " + str.tostring(close, format.mintick) + ", RSI " + str.tostring(r, "#.0") +
+      (held != 0 ? ", exit on a close " + (held > 0 ? "above " : "below ") + str.tostring(exitNext, format.mintick) : "") +
+      ". Backtest lost money on MES, MNQ and MYM: watch only.", alert.freq_once_per_bar_close)
+
+// ---------- Plots ----------
+plot(showLevels ? slow : na, "Trend average (200 bars)", color = color.new(color.gray, 0), linewidth = 2)
+plotshape(action == "BUY", "Buy", shape.triangleup, location.belowbar, color.teal, size = size.small)
+plotshape(action == "SELL SHORT", "Short", shape.triangledown, location.abovebar, color.red, size = size.small)
+plotshape(action == "EXIT", "Exit", shape.xcross, location.abovebar, color.orange, size = size.tiny)
+// latest trigger levels only, with the price on the axis (they apply to the next close)
+bool canLong  = held == 0 and not na(buyBelow) and buyBelow > trendNext
+bool canShort = held == 0 and allowShort and not na(sellAbove) and sellAbove < trendNext
+plot(showLevels and canLong ? buyBelow : na, "Long if the close is below", color = #3DDC97, linewidth = 2, trackprice = true, show_last = 1, offset = 1, display = display.pane + display.price_scale)
+plot(showLevels and canShort ? sellAbove : na, "Short if the close is above", color = #FF6B6B, linewidth = 2, trackprice = true, show_last = 1, offset = 1, display = display.pane + display.price_scale)
+plot(showLevels and held != 0 ? exitNext : na, "Exit level", color = #FF9F43, linewidth = 2, trackprice = true, show_last = 1, offset = 1, display = display.pane + display.price_scale)
+
+// ---------- Status panel ----------
+PANEL_BG   = #1E222D
+PANEL_TEXT = #F0F3FA
+PANEL_OK   = #3DDC97
+PANEL_BAD  = #FF6B6B
+PANEL_WARN = #FF9F43
+var table panel = table.new(position.top_right, 2, 8, bgcolor = PANEL_BG, frame_color = #434651, frame_width = 1, border_color = #2A2E39, border_width = 1)
+// the last confirmed bar: this strategy only runs when a bar closes, so it never sees the open one
+if showPanel and bar_index >= last_bar_index - 1
+    string root = syminfo.root
+    string evidence = root == "MES" ? "lost money: -$4,840 (watch only)" : root == "MNQ" ? "lost money: -$2,910 (watch only)" : root == "MYM" ? "lost money: -$3,029 (watch only)" : "not tested"
+    string posTxt = held > 0 ? "LONG " + str.tostring(qty) : held < 0 ? "SHORT " + str.tostring(qty) : "FLAT"
+    string nextTxt = held > 0 ? "exit on a close above " + str.tostring(exitNext, format.mintick) : held < 0 ? "exit on a close below " + str.tostring(exitNext, format.mintick) : j >= LASTJ or not inRth ? "no new entries until tomorrow" : canLong ? "long below " + str.tostring(buyBelow, format.mintick) : canShort ? "short above " + str.tostring(sellAbove, format.mintick) : "no trigger (trend filter)"
+    float dayPnl = strategy.netprofit - dayStartNet + strategy.openprofit
+    table.cell(panel, 0, 0, "Position", text_halign = text.align_left, text_color = PANEL_TEXT)
+    table.cell(panel, 1, 0, posTxt, text_color = held > 0 ? PANEL_OK : held < 0 ? PANEL_BAD : PANEL_TEXT)
+    table.cell(panel, 0, 1, "RSI(" + str.tostring(rsiLen) + ")", text_halign = text.align_left, text_color = PANEL_TEXT)
+    table.cell(panel, 1, 1, str.tostring(r, "#.0"), text_color = r < entryLevel ? PANEL_OK : r > 100 - entryLevel ? PANEL_BAD : PANEL_TEXT)
+    table.cell(panel, 0, 2, "Trend (200 bars)", text_halign = text.align_left, text_color = PANEL_TEXT)
+    table.cell(panel, 1, 2, na(slow) ? "warming up" : close > slow ? "above: longs only" : "below: shorts only", text_color = PANEL_TEXT)
+    table.cell(panel, 0, 3, "Next 15-minute close", text_halign = text.align_left, text_color = PANEL_TEXT)
+    table.cell(panel, 1, 3, nextTxt, text_color = PANEL_TEXT)
+    table.cell(panel, 0, 4, "Today's P&L", text_halign = text.align_left, text_color = PANEL_TEXT)
+    table.cell(panel, 1, 4, str.tostring(dayPnl, "$#,##0"), text_color = dayPnl >= 0 ? PANEL_OK : PANEL_BAD)
+    table.cell(panel, 0, 5, "Backtest evidence", text_halign = text.align_left, text_color = PANEL_TEXT)
+    table.cell(panel, 1, 5, evidence, text_color = PANEL_BAD)
+    table.cell(panel, 0, 6, "Session", text_halign = text.align_left, text_color = PANEL_TEXT)
+    table.cell(panel, 1, 6, ethSeen ? "set the chart to regular hours" : "regular hours: OK", text_color = ethSeen ? PANEL_BAD : PANEL_OK)
+    table.cell(panel, 0, 7, "Chart", text_halign = text.align_left, text_color = PANEL_TEXT)
+    table.cell(panel, 1, 7, is15 ? "15-minute: OK" : "switch to a 15-minute chart", text_color = is15 ? PANEL_OK : PANEL_BAD)
