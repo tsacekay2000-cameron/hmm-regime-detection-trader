@@ -23,6 +23,7 @@ the same days' P&L with the average removed.
 from __future__ import annotations
 
 import argparse
+import csv
 from pathlib import Path
 from typing import Optional
 
@@ -68,6 +69,8 @@ def main(argv: Optional[list[str]] = None) -> None:
     ap.add_argument("--horizon", type=int, default=250)
     ap.add_argument("--flips", type=int, default=20000)
     ap.add_argument("--seed", type=int, default=1)
+    ap.add_argument("--write-trades", action="store_true",
+                    help="write pine/vwap_reversion_<symbol>_reference_trades.csv")
     args = ap.parse_args(argv)
 
     for symbol in args.symbols.upper().split(","):
@@ -76,6 +79,16 @@ def main(argv: Optional[list[str]] = None) -> None:
         rng = np.random.default_rng(args.seed)
         first = b.date < SPLIT
         idx = block_bootstrap_index(b.date.size, args.sims, args.horizon, 10, rng)
+        if args.write_trades:
+            rows = im.trade_list(b, mr.vwap_reversion_positions(b), spec.multiplier, spec.tick)
+            out = Path(__file__).parents[1] / "pine" / f"vwap_reversion_{symbol.lower()}_reference_trades.csv"
+            with open(out, "w", newline="") as fh:
+                w = csv.writer(fh)
+                w.writerow(["date", "side", "entry_time_et", "entry_fill", "exit_time_et",
+                            "exit_fill", "pnl_1_contract"])
+                w.writerows(rows)
+            print(f"{symbol}: {len(rows)} VWAP-reversion trades, {sum(r[6] for r in rows):+,.0f} "
+                  f"-> {out.relative_to(out.parents[1])}")
         print(f"\n== {symbol}: {b.date[0]} .. {b.date[-1]}, {b.date.size} full sessions, "
               f"1 contract, after costs ==")
         print(f"  {'':<30}{'days':>6}{'trades':>8}{'net $':>9}{'gross $':>9}{'year 1':>9}"

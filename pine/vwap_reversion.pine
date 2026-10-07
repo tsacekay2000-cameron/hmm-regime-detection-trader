@@ -1,0 +1,199 @@
+// VWAP reversion with a range-day filter (hmm-regime-detection-trader, hmm_trader/intraday_mr.py).
+// Use on a 5-MINUTE chart of MNQ1! (back-adjustment "B-ADJ" on). Regular hours, US Eastern time.
+//
+// Rules (checked on every 5-minute close):
+//   - VWAP and its volume-weighted standard deviation (SD) bands, both from the 09:30 open,
+//     using the typical price (high + low + close) / 3.
+//   - Range-day filter: the day counts as a trend day from its first close outside the noise
+//     boundary (the average move from the open at that time over the previous 14 full sessions,
+//     around max/min(open, previous close)). No trades on a trend day.
+//   - From the 10:00 close to the 15:00 close, while the day is still a range day: buy when the
+//     close is below VWAP - 2 SD, sell short when it is above VWAP + 2 SD.
+//   - Exit a long when the close is back at or above VWAP, below VWAP - 3 SD (the stop), or the
+//     day turns into a trend day; shorts mirror it. Orders fill at the next bar's open.
+//     (A long stopped below -3 SD is still below -2 SD, so on a range day it stays long.)
+//   - Everything is closed at the 16:00 close.
+//
+// Backtest (Python, 2024-10 to 2026-09, 1 MNQ after $0.62 + 1 tick per side): +$2,451 over 374
+// trades, positive in year 1 and slightly negative in year 2; a coin-flip test of its sides gave
+// p = 0.17, and the same rule lost money on MES. Without the range-day filter it lost $5,501.
+// Treat it as a weak lead, not a proven edge. Reference trades to compare:
+// pine/vwap_reversion_mnq_reference_trades.csv (python -m examples.intraday_mean_reversion --write-trades).
+// Backtesting research, not financial advice.
+
+//@version=6
+// margin_long = 10: futures need only a margin deposit, not the contracts' full value.
+strategy("VWAP Reversion (range days)", shorttitle = "VWAP Rev", overlay = true,
+  initial_capital = 50000, currency = currency.USD,
+  default_qty_type = strategy.fixed, default_qty_value = 1,
+  commission_type = strategy.commission.cash_per_contract, commission_value = 0.62,
+  slippage = 1, pyramiding = 0, process_orders_on_close = false,
+  margin_long = 10, margin_short = 10)
+
+// ---------- Inputs ----------
+kEntry      = input.float(2.0, "Enter beyond (SD from VWAP)", minval = 0.5, step = 0.25)
+kStop       = input.float(3.0, "Stop beyond (SD from VWAP)", minval = 0.5, step = 0.25)
+useFilter   = input.bool(true, "Range-day filter (no trades once the noise boundary breaks)")
+lookback    = input.int(14, "Noise lookback (sessions)", minval = 1)
+qty         = input.int(1, "Contracts", minval = 1)
+showPanel   = input.bool(true, "Show status panel", group = "Display")
+showLevels  = input.bool(true, "Show VWAP and bands (latest values)", group = "Display")
+
+// ---------- Session clock (US Eastern, regular hours 09:30-16:00) ----------
+TZ    = "America/New_York"
+N     = 78                                  // 5-minute bars from 09:30 to 15:55
+mins  = hour(time, TZ) * 60 + minute(time, TZ)
+idx   = int(math.floor((mins - 570) / 5.0)) // bar of the session, 0 = 09:30
+is5m  = timeframe.isintraday and timeframe.multiplier == 5
+inRth = is5m and mins >= 570 and mins < 960
+FIRST = 5                                   // the bar closing at 10:00
+LAST  = 65                                  // the bar closing at 15:00
+
+// ---------- Daily state ----------
+var float dayOpen      = na
+var float prevClose    = na
+var float lastRthClose = na
+var float cumV         = 0.0
+var float cumPV        = 0.0
+var float cumPV2       = 0.0
+var int   barsToday    = 0
+var int   held         = 0
+var bool  trendDay     = false
+var int   trendAt      = na
+var float dayStartNet  = 0.0
+var array<float> today = array.new_float(N, na)
+var array<float> hist  = array.new_float(0)   // last `lookback` full sessions, N values each
+
+if inRth and idx == 0
+    // a shortened session leaves no 16:00 bar: close anything still open here
+    if strategy.position_size != 0
+        strategy.close_all(comment = "Session end", immediately = true)
+    prevClose   := lastRthClose
+    dayOpen     := open
+    cumV        := 0.0
+    cumPV       := 0.0
+    cumPV2      := 0.0
+    barsToday   := 0
+    held        := 0
+    trendDay    := false
+    trendAt     := na
+    dayStartNet := strategy.netprofit
+    array.fill(today, na)
+
+// average move from the open at bar k over the stored sessions
+bandAt(int k) =>
+    float s = 0.0
+    int days = int(math.floor(array.size(hist) / N))
+    if days > 0
+        for d = 0 to days - 1
+            s += array.get(hist, d * N + k)
+    days >= lookback ? s / days : na
+
+float vw    = na
+float sd    = na
+float upper = na
+float lower = na
+if inRth and not na(dayOpen)
+    barsToday += 1
+    array.set(today, idx, math.abs(close / dayOpen - 1))
+    tp = hlc3
+    cumV   += volume
+    cumPV  += tp * volume
+    cumPV2 += tp * tp * volume
+    vw := cumV > 0 ? cumPV / cumV : close
+    sd := cumV > 0 ? math.sqrt(math.max(cumPV2 / cumV - vw * vw, 0.0)) : 0.0
+    lastRthClose := close
+    sig = bandAt(idx)
+    base = nz(prevClose, dayOpen)
+    upper := math.max(dayOpen, base) * (1 + sig)
+    lower := math.min(dayOpen, base) * (1 - sig)
+    // a trend day from the first close outside the noise boundary (or before the bands exist)
+    if useFilter and not trendDay and (na(sig) or close > upper or close < lower)
+        trendDay := true
+        trendAt  := idx
+
+// ---------- Decisions on each close ----------
+string action = ""
+if inRth and idx >= FIRST and idx < N - 1 and not na(vw)
+    bool broken = useFilter and trendDay
+    int was = held
+    if held > 0 and (close >= vw or close < vw - kStop * sd or broken)
+        held := 0
+    else if held < 0 and (close <= vw or close > vw + kStop * sd or broken)
+        held := 0
+    if held == 0 and idx <= LAST and sd > 0 and not broken
+        held := close < vw - kEntry * sd ? 1 : close > vw + kEntry * sd ? -1 : 0
+    if held != was
+        action := held > 0 ? "BUY" : held < 0 ? "SELL SHORT" : "EXIT"
+        if held > 0
+            strategy.entry("Long", strategy.long, qty = qty)
+        else if held < 0
+            strategy.entry("Short", strategy.short, qty = qty)
+        else
+            strategy.close_all(comment = broken ? "Trend day" : "Exit")
+
+// close everything at 16:00
+if inRth and idx == N - 1
+    held := 0
+    strategy.close_all(comment = "16:00 close", immediately = true)
+else if not inRth and strategy.position_size != 0
+    held := 0
+    strategy.close_all(comment = "Session end", immediately = true)
+
+// store today's moves once the full session is in
+if inRth and idx == N - 1 and barsToday == N
+    for k = 0 to N - 1
+        array.push(hist, array.get(today, k))
+    while array.size(hist) > lookback * N
+        array.shift(hist)
+
+// ---------- Alerts (create one with "alert() function calls only") ----------
+if action != ""
+    alert("VWAP REVERSION " + syminfo.ticker + ": " + action + (action == "EXIT" ? "" : " " + str.tostring(qty)) +
+      " at the next bar's open. Close " + str.tostring(close, format.mintick) + ", VWAP " +
+      str.tostring(vw, format.mintick) + ", bands " + str.tostring(vw - kEntry * sd, format.mintick) +
+      " / " + str.tostring(vw + kEntry * sd, format.mintick) + ".", alert.freq_once_per_bar_close)
+
+// ---------- Plots: latest values only, one line each with the price on the axis ----------
+bool inTrade = held != 0
+plot(showLevels ? vw : na, "VWAP", color = #FF9F43, linewidth = 2, trackprice = true, show_last = 1, display = display.pane + display.price_scale)
+plot(showLevels and not inTrade ? vw + kEntry * sd : na, "Short above", color = #FF6B6B, linewidth = 1, trackprice = true, show_last = 1, display = display.pane + display.price_scale)
+plot(showLevels and not inTrade ? vw - kEntry * sd : na, "Long below", color = #3DDC97, linewidth = 1, trackprice = true, show_last = 1, display = display.pane + display.price_scale)
+plot(showLevels and inTrade ? (held > 0 ? vw - kStop * sd : vw + kStop * sd) : na, "Stop", color = #FF6B6B, linewidth = 2, trackprice = true, show_last = 1, display = display.pane + display.price_scale)
+
+// ---------- Status panel ----------
+PANEL_BG   = #1E222D
+PANEL_TEXT = #F0F3FA
+PANEL_OK   = #3DDC97
+PANEL_BAD  = #FF6B6B
+PANEL_WARN = #FF9F43
+var table panel = table.new(position.top_right, 2, 9, bgcolor = PANEL_BG, frame_color = #434651, frame_width = 1, border_color = #2A2E39, border_width = 1)
+// the last confirmed bar: this strategy only runs when a bar closes, so it never sees the open one
+if showPanel and bar_index >= last_bar_index - 1
+    int stored = int(math.floor(array.size(hist) / N))
+    string tTxt = "-"
+    if not na(trendAt)
+        int tm = 570 + (trendAt + 1) * 5
+        tTxt := str.format("{0,number,00}:{1,number,00}", int(math.floor(tm / 60)), tm % 60)
+    string dayTxt = not useFilter ? "filter off" : not inRth ? "-" : trendDay ? (stored < lookback ? "warming up: no trades" : "TREND DAY since " + tTxt + ": no trades") : "range day: trading"
+    string posTxt = held > 0 ? "LONG " + str.tostring(qty) : held < 0 ? "SHORT " + str.tostring(qty) : "FLAT"
+    string planTxt = na(vw) ? "-" : held > 0 ? "exit on a close >= " + str.tostring(vw, format.mintick) + " or < " + str.tostring(vw - kStop * sd, format.mintick) : held < 0 ? "exit on a close <= " + str.tostring(vw, format.mintick) + " or > " + str.tostring(vw + kStop * sd, format.mintick) : (useFilter and trendDay) or idx > LAST ? "no new entries today" : "long < " + str.tostring(vw - kEntry * sd, format.mintick) + ", short > " + str.tostring(vw + kEntry * sd, format.mintick)
+    float dayPnl = strategy.netprofit - dayStartNet + strategy.openprofit
+    table.cell(panel, 0, 0, "Position", text_halign = text.align_left, text_color = PANEL_TEXT)
+    table.cell(panel, 1, 0, posTxt, text_color = held > 0 ? PANEL_OK : held < 0 ? PANEL_BAD : PANEL_TEXT)
+    table.cell(panel, 0, 1, "VWAP / SD", text_halign = text.align_left, text_color = PANEL_TEXT)
+    table.cell(panel, 1, 1, na(vw) ? "-" : str.tostring(vw, format.mintick) + " / " + str.tostring(sd, format.mintick), text_color = PANEL_WARN)
+    table.cell(panel, 0, 2, "Next close", text_halign = text.align_left, text_color = PANEL_TEXT)
+    table.cell(panel, 1, 2, planTxt, text_color = PANEL_TEXT)
+    table.cell(panel, 0, 3, "Day type", text_halign = text.align_left, text_color = PANEL_TEXT)
+    table.cell(panel, 1, 3, dayTxt, text_color = trendDay and useFilter ? PANEL_BAD : PANEL_OK)
+    table.cell(panel, 0, 4, "Noise boundary", text_halign = text.align_left, text_color = PANEL_TEXT)
+    table.cell(panel, 1, 4, na(upper) ? "-" : str.tostring(lower, format.mintick) + " - " + str.tostring(upper, format.mintick), text_color = PANEL_TEXT)
+    table.cell(panel, 0, 5, "Entry window", text_halign = text.align_left, text_color = PANEL_TEXT)
+    table.cell(panel, 1, 5, "10:00 - 15:00 ET, flat by 16:00", text_color = PANEL_TEXT)
+    table.cell(panel, 0, 6, "Today's P&L", text_halign = text.align_left, text_color = PANEL_TEXT)
+    table.cell(panel, 1, 6, str.tostring(dayPnl, "$#,##0"), text_color = dayPnl >= 0 ? PANEL_OK : PANEL_BAD)
+    table.cell(panel, 0, 7, "Sessions of history", text_halign = text.align_left, text_color = PANEL_TEXT)
+    table.cell(panel, 1, 7, str.tostring(stored) + " of " + str.tostring(lookback) + (stored >= lookback ? "" : " (warming up)"), text_color = stored >= lookback ? PANEL_OK : PANEL_WARN)
+    table.cell(panel, 0, 8, "Chart", text_halign = text.align_left, text_color = PANEL_TEXT)
+    table.cell(panel, 1, 8, is5m ? "5-minute: OK" : "switch to a 5-minute chart", text_color = is5m ? PANEL_OK : PANEL_BAD)

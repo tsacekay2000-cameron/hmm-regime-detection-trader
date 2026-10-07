@@ -438,6 +438,13 @@ $8,000, so fading stretches costs most on trend days. With the filter, MNQ
 made money (+$2,451, positive in year 1, slightly negative in year 2), which
 is not significant.
 
+`pine/vwap_reversion.pine` is the TradingView version for a 5-minute `MNQ1!`
+chart. It uses the same VWAP and SD bands, range-day filter, exits and 16:00
+close. It has a status panel (position, VWAP/SD, what the next close would
+trigger, day type, noise boundary, today's P&L), latest-value lines for VWAP
+and the bands or stop, and alerts. `--write-trades` writes the backtest's trades
+to `pine/vwap_reversion_<symbol>_reference_trades.csv`.
+
 ## Trend following on MES (`examples/mes_trend.py`)
 
 `hmm_trader/trend.py` has three textbook rules on roll-adjusted daily closes,

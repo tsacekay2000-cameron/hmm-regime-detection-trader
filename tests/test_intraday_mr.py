@@ -68,3 +68,24 @@ def test_example_runs(capsys):
     ex.main(["--symbols", "MES", "--sims", "100", "--horizon", "60", "--flips", "200", "--contracts", "1"])
     out = capsys.readouterr().out
     assert "VWAP rev" in out and "fade small gaps" in out and "RSI(2) 15-min" in out
+
+
+def test_vwap_reference_trades_and_pine_defaults():
+    import csv
+    from pathlib import Path
+    from hmm_trader import futures as fu
+    root = Path(__file__).parents[1]
+    b = im.load_day_bars(root / "examples" / "data" / "mnq_5min_rth.csv.gz")
+    spec = fu.CONTRACTS["MNQ"]
+    pos = mr.vwap_reversion_positions(b)
+    rows = im.trade_list(b, pos, spec.multiplier, spec.tick)
+    with open(root / "pine" / "vwap_reversion_mnq_reference_trades.csv") as fh:
+        saved = list(csv.DictReader(fh))
+    assert len(saved) == len(rows) == 374
+    assert [(r["date"], r["side"], r["entry_time_et"]) for r in saved] == [r[:3] for r in rows]
+    assert sum(float(r["pnl_1_contract"]) for r in saved) == pytest.approx(2451, abs=1)
+    src = (root / "pine" / "vwap_reversion.pine").read_text()
+    for snippet in ("//@version=6", 'input.float(2.0, "Enter beyond (SD from VWAP)"',
+                    'input.float(3.0, "Stop beyond (SD from VWAP)"', 'input.int(14, "Noise lookback (sessions)"',
+                    "FIRST = 5", "LAST  = 65", "commission_value = 0.62", "slippage = 1", "margin_long = 10"):
+        assert snippet in src
